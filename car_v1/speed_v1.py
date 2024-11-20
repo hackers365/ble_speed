@@ -12,13 +12,7 @@ import lvgl as lv
 import elm_stream
 import esp_now
 import screen
-
-cmd_map = {
-    0: {"cmd": b"010C\r\n", "pid": bytearray(b'0C')},
-    1: {"cmd": b"010D\r\n", "pid": bytearray(b'0D')},
-    2: {"cmd": b"ATRV\r\n", "pid": bytearray(b'RV')}
-}
-cmd_type = 1
+import cmd
 
 def Run():
     #init esp now broadcast
@@ -32,11 +26,11 @@ def Run():
     scr = screen.Screen()
 
     es = elm_stream.ELM327Stream(scr.on_show)
-
+    
+    pidCmd = cmd.Cmd()
     def send_cmd(task):
-        for k in cmd_map:
-            time.sleep(0.1)
-            ret = bo.send(cmd_map[k]["cmd"])
+        for k in pidCmd.cmd_map:
+            ret = bo.send(pidCmd.cmd_map[k]["cmd"])
             if not ret:
                 scr.set_text("connect")
         

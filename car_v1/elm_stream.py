@@ -47,14 +47,21 @@ class ELM327Stream:
 
             if pid == '0D':  # 车辆速度
                 value = int(data[:2].decode(), 16)
-                return {'pid': pid, 'value': int(value), 'unit': 'km/h'}
+                return {'pid': pid, 'value': int(value)}
             
             elif pid == '0C':  # 引擎转速
                 a = int(data[:2].decode(), 16)
                 b = int(data[2:4].decode(), 16)
                 value = (a * 256 + b) / 4
-                return {'pid': pid, 'value': int(value), 'unit': 'rpm'}
-
+                return {'pid': pid, 'value': int(value)}
+            elif pid == '05':  # 水温
+                raw_temp = int(data[:2].decode(), 16)
+                coolant_temp = raw_temp - 40
+                return {'pid': pid, 'value': int(value)}
+            elif pid == '5C':  # 油温
+                raw_temp = int(data[:2].decode(), 16)
+                coolant_temp = raw_temp - 40
+                return {'pid': pid, 'value': int(value)}
             else:
                 return None
         else:

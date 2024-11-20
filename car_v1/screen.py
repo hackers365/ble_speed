@@ -24,6 +24,8 @@ class Screen():
     def run(self):
         self.genColorWheel()
         self.genSpeedNum()
+        self.genTitle()
+        self.genUnit()
     def init_cmd(self):
         self.cmd = cmd.Cmd()
     def init_screen(self):
@@ -75,13 +77,39 @@ class Screen():
         self.arc.add_event_cb(self.event_handler, lv.EVENT.CLICKED, None)
     def setColorWheelColor(self, color_code):  #不是rgv, 是bgr
         self.arc.set_style_arc_color(lv.color_hex(color_code), lv.PART.MAIN)
+
+    def genTitle(self):
+        scr = self.screen
+        style = self.genStyle()
+        self.title_label = lv.label(scr)
+        #self.label.set_text_font(self.myfont_en_100, 0)  # set the font
+        self.title_label.align(lv.ALIGN.CENTER, 0, -100)
+        self.title_label.set_text('Title')
+        self.title_label.set_style_text_color(lv.color_hex(0xffffff), lv.PART.MAIN)
     
+    def setTitleText(self, title):
+        self.title_label.set_text(title)
+
+    def genUnit(self):
+        scr = self.screen
+        style = self.genStyle()
+        self.unit_label = lv.label(scr)
+        #self.label.set_text_font(self.myfont_en_100, 0)  # set the font
+        self.unit_label.align(lv.ALIGN.CENTER, 110, 0)
+        self.unit_label.set_text('unit')
+        self.unit_label.set_style_text_color(lv.color_hex(0xffffff), lv.PART.MAIN)
+
+    def setUnitText(self, unit, x):
+        self.unit_label.align(lv.ALIGN.CENTER, x, 0)
+        self.unit_label.set_text(unit)
+
     def genSpeedNum(self):
         scr = self.screen
         style = self.genStyle()
         self.label = lv.label(scr)
+        
         self.label.set_style_text_font(self.myfont_en_100, 0)  # set the font
-        self.label.align(lv.ALIGN.CENTER, 0, 0)
+        self.label.align(lv.ALIGN.CENTER, -20, 0)
         self.label.set_text('init')
         self.label.set_style_text_color(lv.color_hex(0xffffff), lv.PART.MAIN)
         
@@ -108,6 +136,9 @@ class Screen():
         if "pid" in v:
             print(config_info["pid"] == v["pid"])
             if config_info["pid"] == v["pid"]:
+                if 'title' in config_info:
+                    self.setTitleText(config_info["title"])
+                
                 if v["pid"] == '0D':
                     if type(v['value']) != int:
                         print("speed is not int")
@@ -124,6 +155,14 @@ class Screen():
                         self.setColorWheelColor(0x0000FF)
                 else:
                     self.setColorWheelColor(0x00a5ff)
+                mainValue = str(v['value'])
+                if 'unit' in config_info:
+                    x = 110
+                    if len(mainValue) > 3:
+                        x = 120
+                    self.setUnitText(config_info["unit"], x)
+                else:
+                    self.setUnitText("", x)
                 self.set_text(str(v['value']))
 
     def event_handler(self, event):
@@ -135,10 +174,11 @@ class Screen():
 def Run():
     screen = Screen()
     resp = {"pid": '0D', 'value': 100}
+    #resp = {"pid": '0C', 'value': 1580}
     screen.on_show(resp)
     while True:
         lv.timer_handler_run_in_period(5)
         time.sleep(0.1)
-#if __name__ == '__main__':
-#    Run()
+if __name__ == '__main__':
+    Run()
 
