@@ -26,6 +26,7 @@ class Screen():
         self.genSpeedNum()
         self.genTitle()
         self.genUnit()
+        self.setBreath()
     def init_cmd(self):
         self.cmd = cmd.Cmd()
     def init_screen(self):
@@ -77,7 +78,22 @@ class Screen():
         self.arc.add_event_cb(self.event_handler, lv.EVENT.CLICKED, None)
     def setColorWheelColor(self, color_code):  #不是rgv, 是bgr
         self.arc.set_style_arc_color(lv.color_hex(color_code), lv.PART.MAIN)
-
+    def opa_anmi_callback(self, a, v):
+        self.arc.set_style_arc_opa(v, lv.PART.MAIN)
+    def setBreath(self):
+        self.anim = lv.anim_t()
+        self.anim.init()
+        self.anim.set_var(self.arc)
+        self.anim.set_values(lv.OPA._30, lv.OPA.COVER)  
+        # 从完全透明到完全不透明
+        self.anim.set_time(3000)  
+        # 动画持续时间为1000ms (1秒)
+        self.anim.set_playback_time(3000)  
+        # 回放动画，使其来回变化
+        self.anim.set_repeat_count(lv.ANIM_REPEAT_INFINITE)
+        # 无限循环
+        self.anim.set_custom_exec_cb(self.opa_anmi_callback)
+        self.anim.start()
     def genTitle(self):
         scr = self.screen
         style = self.genStyle()
@@ -179,6 +195,7 @@ def Run():
     while True:
         lv.timer_handler_run_in_period(5)
         time.sleep(0.1)
+
 if __name__ == '__main__':
     Run()
 
