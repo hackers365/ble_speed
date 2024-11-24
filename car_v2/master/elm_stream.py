@@ -57,11 +57,11 @@ class ELM327Stream:
             elif pid == '05':  # 水温
                 raw_temp = int(data[:2].decode(), 16)
                 coolant_temp = raw_temp - 40
-                return {'pid': pid, 'value': int(value)}
+                return {'pid': pid, 'value': int(coolant_temp)}
             elif pid == '5C':  # 油温
                 raw_temp = int(data[:2].decode(), 16)
                 coolant_temp = raw_temp - 40
-                return {'pid': pid, 'value': int(value)}
+                return {'pid': pid, 'value': int(coolant_temp)}
             else:
                 return None
         else:

@@ -172,7 +172,6 @@ class Screen():
         scr = self.screen
         config_info = self.cmd.cmd_map[self.cmd.cmd_type]
         if "pid" in v:
-            print(config_info["pid"] == v["pid"])
             if config_info["pid"] == v["pid"]:
                 if 'title' in config_info:
                     self.setTitleText(config_info["title"])
@@ -200,7 +199,7 @@ class Screen():
                         x = 120
                     self.setUnitText(config_info["unit"], x)
                 else:
-                    self.setUnitText("", x)
+                    self.setUnitText("", 110)
                 self.set_text(str(v['value']))
 
     def event_handler(self, event):
