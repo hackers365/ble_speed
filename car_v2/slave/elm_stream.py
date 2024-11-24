@@ -12,22 +12,27 @@ class ELM327Stream:
         """
         self.buffer.extend(data)
         
-        print(data)
+        #print(data)
 
         if self.buffer.endswith('>'):
             self.buffer = self.buffer[:-1]
+        if self.buffer.startswith(b'>'):
+            self.buffer = self.buffer[1:]
 
         # 尝试从缓冲区解析出每一行响应
-        while b'\r' in self.buffer:
-            line, self.buffer = self.buffer.split(b'\r', 1)
+        while b'\r\r' in self.buffer:
+            line, self.buffer = self.buffer.split(b'\r\r', 1)
             if len(line) == 0:
                 continue
-            parsed_response = self._parse_response(line)
+            cmd, resp = line.split(b'\r', 1)
+            if len(cmd) == 0 or len(resp) == 0:
+                continue
+            parsed_response = self._parse_response(cmd, resp)
             if parsed_response:
                 self.on_show(parsed_response)
                 #self._handle_parsed_response(parsed_response)
 
-    def _parse_response(self, response):
+    def _parse_response(self, cmd, response):
         """
         解析单行 ELM327 响应数据。
         
@@ -65,7 +70,9 @@ class ELM327Stream:
             else:
                 return None
         else:
-            return {'pid': 'RV', 'value': clean_response.decode()}
+            if cmd == 'ATRV':
+                return {'pid': 'RV', 'value': clean_response.decode()}
+        return None
 
     def _handle_parsed_response(self, parsed_response):
         """
@@ -88,9 +95,20 @@ elm327_stream = ELM327Stream(on_show)
 
 # 模拟接收到的数据流
 data_stream = [
-    b'410D1E\r\n>',  # 车辆速度
-    b'41 0C 0C 35\r\n',  # 引擎转速
-    b'41 0D 2A\r\n'  # 车辆速度
+    b'ATRV\r14.5V\r\r>0105\r',  # 车辆速度
+    b'41 05 4A \r',  # 引擎转速
+    b'\r>',  # 车辆速度
+    b'015C\rSTOPPED\r\r>>',  # 车辆速度
+    b'010D\r',  # 车辆速度
+    b'41 0D 00 \r41 0D 00 \r',  # 车辆速度
+    b'\r>ATRV\r14.5V\r\r>',  # 车辆速度
+    b'0105\r',  # 车辆速度
+    b'41 05 4A \r',
+    b'\r>015C\r',
+    b'NO DATA\r\r>',
+    b'010C\r41 0C 14 28 \r41',
+    b' 0C 14 12 \rSTOPPED\r\r',
+    b'>',
 ]
 
 
