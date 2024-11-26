@@ -1,6 +1,6 @@
 
 import usys as sys
-sys.path.append('') # See: https://github.com/micropython/micropython/issues/6419
+sys.path.append('/common') # See: https://github.com/micropython/micropython/issues/6419
 
 import micropython,gc
 
