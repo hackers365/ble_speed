@@ -25,19 +25,17 @@ class ELM327Stream:
             line, self.buffer = self.buffer.split(b'>', 1)
             if len(line) == 0:
                 continue
-            cmd = bytearray()
-            resp = bytearray()
-            if b'\r' in line:
-                cmd, resp = line.split(b'\r', 1)
-            else:
-                resp = line
-            parsed_responses = self._parse_response(cmd, resp)
-            if parsed_responses:
-                for parse_data in parsed_responses:
-                    self.on_show(parse_data)
-                #self._handle_parsed_response(parsed_response)
 
-    def _parse_response(self, cmd, response):
+            if b'\r' in line:
+                resps = line.split(b'\r')
+            else:
+                resps = [line]
+            for resp in resps:
+                parsed_responses = self._parse_response(resp)
+                if parsed_responses:
+                    for parse_data in parsed_responses:
+                        self.on_show(parse_data)
+    def _parse_response(self, response):
         """
         解析单行 ELM327 响应数据。
         
@@ -51,6 +49,8 @@ class ELM327Stream:
         raw_response = response.strip()
         clean_response = bytearray(b for b in raw_response if b != ord(' '))
         while True:
+            if clean_response.startswith('01') or clean_response == b'ATRV' or clean_response == b'OK':
+                break
             if clean_response.startswith('41'):
                 pid = clean_response[2:4]
                 data = clean_response[4:]
@@ -96,7 +96,7 @@ class ELM327Stream:
 
 
 # 示例使用:
-
+'''
 def on_show(v):
     print(v)
 
@@ -126,3 +126,4 @@ data_stream = [
 # 模拟逐步接收数据
 for data in data_stream:
     elm327_stream.append(data)
+'''

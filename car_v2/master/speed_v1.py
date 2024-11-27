@@ -14,6 +14,14 @@ import esp_now
 import screen
 import cmd
 
+def genCmdBytes(cmd_map):
+    cmd_bytes = bytearray()
+    for k in cmd_map:
+        cmd_bytes.extend(cmd_map[k]["cmd"])
+        cmd_bytes.extend(b' ')
+    cmd_bytes.extend(b'\r\n')
+    return cmd_bytes
+
 def Run():
     #init esp now broadcast
     def esp_now_recv(mac, msg):
@@ -28,13 +36,13 @@ def Run():
     es = elm_stream.ELM327Stream(scr.on_show)
     
     pidCmd = cmd.Cmd()
+    cmd_bytes = genCmdBytes(pidCmd.cmd_map)
+    print(cmd_bytes)
     def send_cmd(task):
-        for k in pidCmd.cmd_map:
-            ret = bo.send(pidCmd.cmd_map[k]["cmd"])
-            if not ret:
-                scr.set_text("connect")
+        ret = bo.send(cmd_bytes)
+        if not ret:
+            scr.set_text("init")
     
-
     # 创建定时器更新显示
     timer = lv.timer_create(send_cmd, 200, None)
 
@@ -45,12 +53,22 @@ def Run():
 
     def mock_recv(task):
         data_stream = [
-            b'410D1E\r\n>',  # 车辆速度
-            b'41 0C 0C 35\r\n',  # 引擎转速
-            b'41 0D 2A\r\n'  # 车辆速度
-            b'14.3V\r\n' #电压
-            b'41055A\r\n' #水温
-            b'415C6A\r\n' #油温
+            b'ATRV\r14.5V\r\r>0105\r',  # 车辆速度
+            b'41 05 4A \r',  # 引擎转速
+            b'\r>',  # 车辆速度
+            b'015C\rSTOPPED\r\r>>',  # 车辆速度
+            b'010D\r',  # 车辆速度
+            b'41 0D 00 \r41 0D 00 \r',  # 车辆速度
+            b'\r>ATRV\r14.5V\r\r>',  # 车辆速度
+            b'0105\r',  # 车辆速度
+            b'41 05 4A \r',
+            b'\r>015C\r',
+            b'NO DATA\r\r>',
+            b'010C\r41 0C 14 28 \r41',
+            b' 0C 14 12 \rSTOPPED\r\r',
+            b'>',
+            b'410C1429>',
+            b'410C1430410C1435>',
         ]
         for data in data_stream:
             on_value(data)
