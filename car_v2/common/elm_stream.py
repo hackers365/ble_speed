@@ -11,6 +11,7 @@ class ELM327Stream:
         data (bytes): 新接收到的数据
         """
         self.buffer.extend(data)
+        #print(self.buffer)
         
         #print(data)
         '''
@@ -48,39 +49,48 @@ class ELM327Stream:
         ret = []
         raw_response = response.strip()
         clean_response = bytearray(b for b in raw_response if b != ord(' '))
+        
         while True:
+            if len(clean_response) == 0:
+                break
             if clean_response.startswith('01') or clean_response == b'ATRV' or clean_response == b'OK':
                 break
+            pid = clean_response[:2]
+            data = clean_response[2:]
             if clean_response.startswith('41'):
                 pid = clean_response[2:4]
                 data = clean_response[4:]
-                skip_count = 0
-                if pid == '0D':  # 车辆速度
-                    value = int(data[:2].decode(), 16)
-                    ret.append({'pid': pid, 'value': int(value)})
-                    skip_count = 2
-                elif pid == '0C':  # 引擎转速
-                    a = int(data[:2].decode(), 16)
-                    b = int(data[2:4].decode(), 16)
-                    value = (a * 256 + b) / 4
-                    ret.append({'pid': pid, 'value': int(value)})
-                    skip_count = 4
-                elif pid == '05':  # 水温
-                    raw_temp = int(data[:2].decode(), 16)
-                    coolant_temp = raw_temp - 40
-                    ret.append({'pid': pid, 'value': int(coolant_temp)})
-                    skip_count = 2
-                elif pid == '5C':  # 油温
-                    raw_temp = int(data[:2].decode(), 16)
-                    coolant_temp = raw_temp - 40
-                    ret.append({'pid': pid, 'value': int(coolant_temp)})
-                    skip_count = 2
-                if skip_count > 0:
-                    clean_response = data[skip_count:]
-            else:
-                if b'V' in clean_response:
-                    ret.append({'pid': 'RV', 'value': clean_response.decode()})
+
+            skip_count = 0
+            if pid == '0D':  # 车辆速度
+                value = int(data[:2].decode(), 16)
+                ret.append({'pid': pid, 'value': int(value)})
+                skip_count = 2
+            elif pid == '0C':  # 引擎转速
+                a = int(data[:2].decode(), 16)
+                b = int(data[2:4].decode(), 16)
+                value = (a * 256 + b) / 4
+                ret.append({'pid': pid, 'value': int(value)})
+                skip_count = 4
+            elif pid == '05':  # 水温
+                raw_temp = int(data[:2].decode(), 16)
+                coolant_temp = raw_temp - 40
+                ret.append({'pid': pid, 'value': int(coolant_temp)})
+                skip_count = 2
+            elif pid == '5C':  # 油温
+                raw_temp = int(data[:2].decode(), 16)
+                coolant_temp = raw_temp - 40
+                ret.append({'pid': pid, 'value': int(coolant_temp)})
+                skip_count = 2
+            if skip_count > 0:
+                clean_response = data[skip_count:]
+                continue
+            
+            if b'V' in clean_response:
+                ret.append({'pid': 'RV', 'value': clean_response.decode()})
                 break
+            #向后移动
+            clean_response = clean_response[2:]
         return ret
 
     def _handle_parsed_response(self, parsed_response):
@@ -103,6 +113,7 @@ def on_show(v):
 elm327_stream = ELM327Stream(on_show)
 
 # 模拟接收到的数据流
+
 data_stream = [
     b'ATRV\r14.5V\r\r>0105\r',  # 车辆速度
     b'41 05 4A \r',  # 引擎转速
@@ -120,6 +131,13 @@ data_stream = [
     b'>',
     b'410C1429>',
     b'410C1430410C1435>',
+]
+
+
+data_stream = [
+    b'410C0C140D00\r410C0C1C0D00\r\r>',
+    b'410C0BEA0D00\r410C0BE40D00\r\r>',
+    b'410C0BF80D00\r410C0BFC0D00\r\r>',
 ]
 
 
