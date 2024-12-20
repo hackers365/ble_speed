@@ -1,5 +1,5 @@
 class ELM327Stream:
-    def __init__(self, on_show):
+    def __init__(self, on_show=None):
         self.buffer = bytearray()
         self.on_show = on_show
 
@@ -21,6 +21,7 @@ class ELM327Stream:
             self.buffer = self.buffer[1:]
         '''
 
+        final_data = []
         # 尝试从缓冲区解析出每一行响应
         while b'>' in self.buffer:
             line, self.buffer = self.buffer.split(b'>', 1)
@@ -35,7 +36,11 @@ class ELM327Stream:
                 parsed_responses = self._parse_response(resp)
                 if parsed_responses:
                     for parse_data in parsed_responses:
-                        self.on_show(parse_data)
+                        if self.on_show:
+                            self.on_show(parse_data)
+                        final_data.append(parse_data)
+        return final_data
+
     def _parse_response(self, response):
         """
         解析单行 ELM327 响应数据。

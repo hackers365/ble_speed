@@ -1,4 +1,3 @@
-
 import usys as sys
 sys.path.append('') # See: https://github.com/micropython/micropython/issues/6419
 
@@ -19,7 +18,7 @@ def Run():
 
     #init esp now broadcast
     def esp_now_recv(mac, msg):
-        es.append(v)
+        es.append(msg)
     en = esp_now.EspN(esp_now_recv)
     en.Run()
     bcast = b'\xff\xff\xff\xff\xff\xff'
@@ -27,6 +26,7 @@ def Run():
 
     while True:
         lv.timer_handler_run_in_period(5)
+        en.Recv()
 
 if __name__ == '__main__':
     Run()
