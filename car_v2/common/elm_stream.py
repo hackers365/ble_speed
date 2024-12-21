@@ -1,5 +1,5 @@
 class ELM327Stream:
-    def __init__(self, on_show):
+    def __init__(self, on_show=None):
         self.buffer = bytearray()
         self.on_show = on_show
 
@@ -11,28 +11,37 @@ class ELM327Stream:
         data (bytes): 新接收到的数据
         """
         self.buffer.extend(data)
+        #print(self.buffer)
         
         #print(data)
-
+        '''
         if self.buffer.endswith('>'):
             self.buffer = self.buffer[:-1]
         if self.buffer.startswith(b'>'):
             self.buffer = self.buffer[1:]
+        '''
 
+        final_data = []
         # 尝试从缓冲区解析出每一行响应
-        while b'\r\r' in self.buffer:
-            line, self.buffer = self.buffer.split(b'\r\r', 1)
+        while b'>' in self.buffer:
+            line, self.buffer = self.buffer.split(b'>', 1)
             if len(line) == 0:
                 continue
-            cmd, resp = line.split(b'\r', 1)
-            if len(cmd) == 0 or len(resp) == 0:
-                continue
-            parsed_response = self._parse_response(cmd, resp)
-            if parsed_response:
-                self.on_show(parsed_response)
-                #self._handle_parsed_response(parsed_response)
 
-    def _parse_response(self, cmd, response):
+            if b'\r' in line:
+                resps = line.split(b'\r')
+            else:
+                resps = [line]
+            for resp in resps:
+                parsed_responses = self._parse_response(resp)
+                if parsed_responses:
+                    for parse_data in parsed_responses:
+                        if self.on_show:
+                            self.on_show(parse_data)
+                        final_data.append(parse_data)
+        return final_data
+
+    def _parse_response(self, response):
         """
         解析单行 ELM327 响应数据。
         
@@ -42,7 +51,7 @@ class ELM327Stream:
         返回:
         dict: 包含 PID 和解析后的值, 如果解析失败返回 None.
         """
-        
+        ret = []
         raw_response = response.strip()
         clean_response = bytearray(b for b in raw_response if b != ord(' '))
         
@@ -62,29 +71,37 @@ class ELM327Stream:
                 pid = clean_response[2:4]
                 data = clean_response[4:]
 
+            skip_count = 0
             if pid == '0D':  # 车辆速度
                 value = int(data[:2].decode(), 16)
-                return {'pid': pid, 'value': int(value)}
-            
+                ret.append({'pid': pid, 'value': int(value)})
+                skip_count = 2
             elif pid == '0C':  # 引擎转速
                 a = int(data[:2].decode(), 16)
                 b = int(data[2:4].decode(), 16)
                 value = (a * 256 + b) / 4
-                return {'pid': pid, 'value': int(value)}
+                ret.append({'pid': pid, 'value': int(value)})
+                skip_count = 4
             elif pid == '05':  # 水温
                 raw_temp = int(data[:2].decode(), 16)
                 coolant_temp = raw_temp - 40
-                return {'pid': pid, 'value': int(coolant_temp)}
+                ret.append({'pid': pid, 'value': int(coolant_temp)})
+                skip_count = 2
             elif pid == '5C':  # 油温
                 raw_temp = int(data[:2].decode(), 16)
                 coolant_temp = raw_temp - 40
-                return {'pid': pid, 'value': int(coolant_temp)}
-            else:
-                return None
-        else:
-            if cmd == 'ATRV':
-                return {'pid': 'RV', 'value': clean_response.decode()}
-        return None
+                ret.append({'pid': pid, 'value': int(coolant_temp)})
+                skip_count = 2
+            if skip_count > 0:
+                clean_response = data[skip_count:]
+                continue
+            
+            if b'V' in clean_response:
+                ret.append({'pid': 'RV', 'value': clean_response.decode()})
+                break
+            #向后移动
+            clean_response = clean_response[2:]
+        return ret
 
     def _handle_parsed_response(self, parsed_response):
         """
@@ -106,6 +123,7 @@ def on_show(v):
 elm327_stream = ELM327Stream(on_show)
 
 # 模拟接收到的数据流
+
 data_stream = [
     b'ATRV\r14.5V\r\r>0105\r',  # 车辆速度
     b'41 05 4A \r',  # 引擎转速
@@ -121,6 +139,15 @@ data_stream = [
     b'010C\r41 0C 14 28 \r41',
     b' 0C 14 12 \rSTOPPED\r\r',
     b'>',
+    b'410C1429>',
+    b'410C1430410C1435>',
+]
+
+
+data_stream = [
+    b'410C0C140D00\r410C0C1C0D00\r\r>',
+    b'410C0BEA0D00\r410C0BE40D00\r\r>',
+    b'410C0BF80D00\r410C0BFC0D00\r\r>',
 ]
 
 data_stream = [
