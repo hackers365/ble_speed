@@ -50,11 +50,16 @@ class ELM327Stream:
         raw_response = response.strip()
         clean_response = bytearray(b for b in raw_response if b != ord(' '))
         
+        #扩展帧标识
+        if clean_response == b'008':
+            return ret
         while True:
             if len(clean_response) == 0:
                 break
             if clean_response.startswith('01') or clean_response == b'ATRV' or clean_response == b'OK':
                 break
+            if b':' in clean_response:
+                clean_response = clean_response[2:]
             pid = clean_response[:2]
             data = clean_response[2:]
             if clean_response.startswith('41'):
@@ -138,6 +143,10 @@ data_stream = [
     b'410C0C140D00\r410C0C1C0D00\r\r>',
     b'410C0BEA0D00\r410C0BE40D00\r\r>',
     b'410C0BF80D00\r410C0BFC0D00\r\r>',
+]
+
+data_stream = [
+    b'410C0BA20D00\r008\r0:410C0BA00D00\r1:05735555555555\r\r>'
 ]
 
 
