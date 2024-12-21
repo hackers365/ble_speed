@@ -95,12 +95,13 @@ async def read_data(bo, data_manager, end_marker=ELM_PROMPT, timeout=None):
 async def collect_data(bo, pidCmd, data_manager):
     while True:
         try:
+            bo.run()
             for k in pidCmd.cmd_map:
                 ret = await send_data(bo, pidCmd.cmd_map[k]["cmd"] + b'\r\n', data_manager)
                 if ret:
                     data_manager.put_pre_parse_data(ret)
                     data_manager.put_broadcast_data(ret)
-                #await asyncio.sleep_ms(10)
+                await asyncio.sleep_ms(10)
         except Exception as e:
             print('collect_data error:', e)
 
@@ -109,11 +110,11 @@ async def broadcast_data(en, bcast, data_manager):
     while True:
         try:
             if not data_manager.broadcast_data_empty():
-                data = await data_manager.get_broadcast_data()
+                data = data_manager.get_broadcast_data()
                 en.Send(bcast, data, False)
         except Exception as e:
             print('broadcast_data error:', e)
-        await asyncio.sleep_ms(100)
+        await asyncio.sleep_ms(10)
 
 async def parse_data(data_manager, es):
     while True:
@@ -134,13 +135,13 @@ async def display_data(data_manager, scr):
             if not data_manager.parsed_data_empty():
                 data = data_manager.get_parsed_data()
                 # 更新屏幕显示
-                scr.show(data)  # 假设Screen类有show方法来显示数据
+                scr.on_show(data)  # 假设Screen类有show方法来显示数据
         except Exception as e:
             print('display_data error:', e)
         lv.timer_handler_run_in_period(5)
         await asyncio.sleep_ms(5)
 
-async def Run():
+async def iRun():
     # 初始化 ESP-NOW
     def esp_now_recv(mac, msg):
         pass
@@ -161,8 +162,8 @@ async def Run():
         data_manager.put_raw_data(v)
     
     bo = BleObd(on_value)
-    bo.run()
 
+    lv.timer_handler_run_in_period(5)
     # 创建并运行所有任务
     tasks = [
         asyncio.create_task(collect_data(bo, pidCmd, data_manager)),
@@ -174,7 +175,10 @@ async def Run():
     # 等待所有任务完成（实际上是无限循环）
     await asyncio.gather(*tasks)
 
+def Run():
+    asyncio.run(iRun())
+
 if __name__ == '__main__':
-    asyncio.run(Run())
+    Run()
 
 

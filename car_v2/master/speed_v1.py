@@ -19,7 +19,7 @@ import uasyncio as asyncio
 def genCmdBytes(cmd_map):
     cmd_bytes = bytearray(b'01')
     for k in cmd_map:
-        if "skip_multi" in k:
+        if "skip_multi" in cmd_map[k]:
             continue
         cmd_bytes.extend(cmd_map[k]["pid"])
     cmd_bytes.extend(b'\r\n')
@@ -71,9 +71,10 @@ def Run():
                 return
             time.sleep_ms(200)
         '''
+        
           
     # 创建定时器更新显示
-    timer = lv.timer_create(send_cmd, 500, None)
+    timer = lv.timer_create(send_cmd, 200, None)
 
     #收到消息
     def on_value(v):
