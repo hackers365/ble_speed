@@ -45,10 +45,22 @@ class ELM327Stream:
         
         raw_response = response.strip()
         clean_response = bytearray(b for b in raw_response if b != ord(' '))
-
-        if clean_response.startswith('41'):
-            pid = clean_response[2:4]
-            data = clean_response[4:]
+        
+        #扩展帧标识
+        if clean_response == b'008':
+            return ret
+        while True:
+            if len(clean_response) == 0:
+                break
+            if clean_response.startswith('01') or clean_response == b'ATRV' or clean_response == b'OK':
+                break
+            if b':' in clean_response:
+                clean_response = clean_response[2:]
+            pid = clean_response[:2]
+            data = clean_response[2:]
+            if clean_response.startswith('41'):
+                pid = clean_response[2:4]
+                data = clean_response[4:]
 
             if pid == '0D':  # 车辆速度
                 value = int(data[:2].decode(), 16)
@@ -109,6 +121,10 @@ data_stream = [
     b'010C\r41 0C 14 28 \r41',
     b' 0C 14 12 \rSTOPPED\r\r',
     b'>',
+]
+
+data_stream = [
+    b'410C0BA20D00\r008\r0:410C0BA00D00\r1:05735555555555\r\r>'
 ]
 
 
