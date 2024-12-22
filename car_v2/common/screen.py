@@ -58,10 +58,10 @@ class Screen():
         fs_driver.fs_register(fs_drv, 'S')
 
         #myfont_en_150 = lv.binfont_create("S:%s/font/speed_num_consolas_150.bin" % script_path)
-        self.myfont_en_100 = lv.binfont_create("S:%s/common/font/speed_num_consolas_100.bin" % script_path)
+        self.myfont_en_100 = lv.binfont_create("S:%s/font/speed_num_consolas_100.bin" % script_path)
     
     def setImage(self):
-        with open('%s/common/car.png' % self.script_path, 'rb') as f:
+        with open('%s/car.png' % self.script_path, 'rb') as f:
             png_data = f.read()
         
         png_image_dsc = lv.image_dsc_t({
