@@ -168,10 +168,18 @@ class Screen():
         style.set_text_font(lv.font_montserrat_20)
         return style
 
-    def on_show(self, v):
+    def on_show(self, v, init=False):
         scr = self.screen
         config_info = self.cmd.cmd_map[self.cmd.cmd_type]
+        pid = bytes(config_info["pid"])
+        if init:
+            if pid in self.cmd.pid2value:
+                v = self.cmd.pid2value[pid]
+            else:
+                return
+    
         if "pid" in v:
+            self.cmd.pid2value[pid] = v
             if config_info["pid"] == v["pid"]:
                 if 'title' in config_info:
                     self.setTitleText(config_info["title"])
@@ -207,7 +215,8 @@ class Screen():
         obj = event.get_target()
         if code == lv.EVENT.CLICKED:
             self.cmd.cmd_type = (self.cmd.cmd_type + 1) % len(self.cmd.cmd_map)
-
+            self.on_show(None, True)
+        
 def Run():
     screen = Screen()
     resp = {"pid": '0D', 'value': 100}
