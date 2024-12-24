@@ -3,6 +3,7 @@ class Cmd():
     def __init__(self):
         self.init_cmd()
     def init_cmd(self):
+        self.last_cmd_type = 0
         self.cmd_type = 1
         self.cmd_map = {
             0: {"cmd": b"010C", "pid": bytearray(b'0C'), "len": 4, "title": "Engine Speed", "unit": "rpm"},
@@ -17,3 +18,5 @@ class Cmd():
             b"05": {"pid": '05', 'value': 99},
             b"RV": {"pid": 'RV', 'value': "14.2V"}
         }
+    def same_cmd_type(self):
+        return self.cmd_type == self.last_cmd_type

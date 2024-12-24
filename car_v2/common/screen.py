@@ -1,6 +1,6 @@
 
 import usys as sys
-sys.path.append('') # See: https://github.com/micropython/micropython/issues/6419
+sys.path.append('/common') # See: https://github.com/micropython/micropython/issues/6419
 
 import micropython,gc
 
@@ -16,6 +16,7 @@ import fs_driver
 import cmd
 
 class Screen():
+
     def __init__(self):
         self.init_screen()
         self.init_font()
@@ -27,7 +28,12 @@ class Screen():
         self.genTitle()
         self.genUnit()
         #self.setBreath()
-        self.setImage()
+        #self.setImage()
+        self.genFps()
+        #self.show_lottie("/rlottie/smile.json", 100, 100, 0, 0)
+        #self.show_lottie("/rlottie/loading.json", 100, 100, -100, 0)
+        #self.show_lottie("/rlottie/rainbow.json", 100, 100, 100, 0)
+        
     def init_cmd(self):
         self.cmd = cmd.Cmd()
     def init_screen(self):
@@ -48,6 +54,7 @@ class Screen():
         self.screen = lv.screen_active()
         self.screen.set_style_bg_color(lv.color_hex(0x000000), lv.PART.MAIN | lv.STATE.DEFAULT)
         self.screen.set_style_bg_opa(255, lv.PART.MAIN | lv.STATE.DEFAULT)
+        
     def init_font(self):
         try:
             script_path = __file__[:__file__.rfind('/')] if __file__.find('/') >= 0 else '.'
@@ -58,10 +65,10 @@ class Screen():
         fs_driver.fs_register(fs_drv, 'S')
 
         #myfont_en_150 = lv.binfont_create("S:%s/font/speed_num_consolas_150.bin" % script_path)
-        self.myfont_en_100 = lv.binfont_create("S:%s/font/speed_num_consolas_100.bin" % script_path)
+        self.myfont_en_100 = lv.binfont_create("S:%s/common/font/speed_num_consolas_100.bin" % script_path)
     
     def setImage(self):
-        with open('%s/car.png' % self.script_path, 'rb') as f:
+        with open('%s/common/car.png' % self.script_path, 'rb') as f:
             png_data = f.read()
         
         png_image_dsc = lv.image_dsc_t({
@@ -70,7 +77,6 @@ class Screen():
         })
 
         # Create an image using the decoder
-
         image1 = lv.image(self.screen)
         image1.set_src(png_image_dsc)
         image1.set_pos(100,240)
@@ -90,7 +96,7 @@ class Screen():
         self.arc.set_value(100)          #值，默认0-100
         self.arc.set_size(350,350)       #宽高
         self.arc.center()                #中间
-
+        
         self.arc.add_event_cb(self.event_handler, lv.EVENT.CLICKED, None)
     def setColorWheelColor(self, color_code):  #不是rgv, 是bgr
         self.arc.set_style_arc_color(lv.color_hex(color_code), lv.PART.MAIN)
@@ -153,7 +159,7 @@ class Screen():
 
         #self.label.add_event_cb(event_handler, lv.EVENT.ALL, None)
         #label.add_style(style, lv.PART.MAIN)
-    
+
     def set_text(self, text):
         #self.label.set_style_text_font(myfont_en_150, 0)  # set the font
         self.label.set_text(text)
@@ -168,7 +174,7 @@ class Screen():
         style.set_text_font(lv.font_montserrat_20)
         return style
 
-    def on_show(self, v, init=False):
+    def on_show(self, v, init=False):            
         scr = self.screen
         config_info = self.cmd.cmd_map[self.cmd.cmd_type]
         pid = bytes(config_info["pid"])
@@ -177,13 +183,14 @@ class Screen():
                 v = self.cmd.pid2value[pid]
             else:
                 return
-    
+        same_cmd_type = self.cmd.same_cmd_type()
         if "pid" in v:
             self.cmd.pid2value[pid] = v
             if config_info["pid"] == v["pid"]:
-                if 'title' in config_info:
+                if same_cmd_type and 'title' in config_info:
                     self.setTitleText(config_info["title"])
-                
+                #self.setColorWheelColor(0x00a5ff)
+                '''
                 if v["pid"] == '0D':
                     if type(v['value']) != int:
                         print("speed is not int")
@@ -200,32 +207,72 @@ class Screen():
                         self.setColorWheelColor(0x0000FF)
                 else:
                     self.setColorWheelColor(0x00a5ff)
+                '''
                 mainValue = str(v['value'])
-                if 'unit' in config_info:
-                    x = 110
-                    if len(mainValue) > 3:
-                        x = 120
-                    self.setUnitText(config_info["unit"], x)
-                else:
-                    self.setUnitText("", 110)
+                if same_cmd_type:
+                    if 'unit' in config_info:
+                        x = 110
+                        if len(mainValue) > 3:
+                            x = 120
+                        self.setUnitText(config_info["unit"], x)
+                    else:
+                        self.setUnitText("", 110)
                 self.set_text(str(v['value']))
 
     def event_handler(self, event):
         code = event.get_code()
         obj = event.get_target()
         if code == lv.EVENT.CLICKED:
+            self.cmd.last_cmd_type = self.cmd.cmd_type
             self.cmd.cmd_type = (self.cmd.cmd_type + 1) % len(self.cmd.cmd_map)
             self.on_show(None, True)
+
+    def genFps(self):
+        scr = self.screen
+        style = self.genStyle()
+        self.fps = lv.label(scr)
+        #self.label.set_text_font(self.myfont_en_100, 0)  # set the font
+        self.fps.align(lv.ALIGN.CENTER, 0, 150)
+        self.fps.set_text('fps')
+        self.fps.set_style_text_color(lv.color_hex(0xffffff), lv.PART.MAIN)
+        
+        self.last_time = lv.tick_get()
+        self.frame_count = 0
+        
+        timer = lv.timer_create(self.update_fps, 1000, None)
+    # 定义一个更新FPS的函数
+    def update_fps(self, task):
+        current_time = lv.tick_get()
+        elapsed = time.ticks_diff(current_time, self.last_time)
+        
+        if elapsed > 0:
+            fps = (self.frame_count * 1000) / elapsed
+            self.fps.set_text(f"FPS: {fps}")  # 更新标签显示
+            self.frame_count = 0
+            self.last_time = current_time
+            print(fps)
+        
+    def show_lottie(self, file_path, w, h, x, y):
+        with open(file_path, 'r') as file:
+            json_data = file.read()
+            json_bytes = json_data.encode('utf-8')
+        
+        self.lottie = lv.rlottie_create_from_raw(self.screen, w, h, json_bytes)
+        self.lottie.align(lv.ALIGN.CENTER, x, y)
         
 def Run():
     screen = Screen()
     resp = {"pid": '0D', 'value': 100}
     #resp = {"pid": '0C', 'value': 1580}
-    screen.on_show(resp)
-    while True:
-        lv.timer_handler_run_in_period(5)
-        time.sleep(0.1)
 
+    # 创建定时器更新显示
+
+    while True:
+        screen.on_show(resp)
+        lv.timer_handler_run_in_period(5)
+        #time.sleep(0.005)
+        resp['value'] += 1
+        screen.frame_count += 1
 if __name__ == '__main__':
     Run()
 
