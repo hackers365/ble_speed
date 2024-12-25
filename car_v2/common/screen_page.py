@@ -38,7 +38,7 @@ class PageManager:
         code = event.get_code()
         if code == lv.EVENT.PRESSED:
             # 获取按下时的坐标
-            indev = lv.indev_active()
+            indev = lv.indev_get_act()
             if indev:
                 point = lv.point_t()
                 indev.get_point(point)
@@ -47,7 +47,7 @@ class PageManager:
                 
         elif code == lv.EVENT.PRESSING:
             # 获取移动时的坐标
-            indev = lv.indev_active()
+            indev = lv.indev_get_act()
             if indev and hasattr(self, 'touch_start_x'):
                 point = lv.point_t()
                 indev.get_point(point)
