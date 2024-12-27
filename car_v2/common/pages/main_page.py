@@ -9,16 +9,11 @@ class MainPage(BasePage):
         self.script_path = baseScreen.script_path
         self.myfont_en_100 = baseScreen.myfont_en_100
         
-        # FPS计数相关
-        self.last_time = 0
-        self.frame_count = 0
-
     def init(self):
         self.genColorWheel()
         self.genSpeedNum()
         self.genTitle()
         self.genUnit()
-        self.genFps()
         self.init_cmd()
 
     def init_cmd(self):
@@ -88,31 +83,6 @@ class MainPage(BasePage):
         style.init()
         style.set_text_font(lv.font_montserrat_20)
         return style
-
-    def genFps(self):
-        style = self.genStyle()
-        self.fps = lv.label(self.screen)
-        self.elements.append(self.fps)
-        
-        self.fps.align(lv.ALIGN.CENTER, 0, 150)
-        self.fps.set_text('fps')
-        self.fps.set_style_text_color(lv.color_hex(0xffffff), lv.PART.MAIN)
-        
-        self.last_time = lv.tick_get()
-        self.frame_count = 0
-        
-        timer = lv.timer_create(self.update_fps, 1000, None)
-        self.elements.append(timer)
-
-    def update_fps(self, task):
-        current_time = lv.tick_get()
-        elapsed = time.ticks_diff(current_time, self.last_time)
-        
-        if elapsed > 0:
-            fps = (self.frame_count * 1000) / elapsed
-            self.fps.set_text(f"FPS: {fps:.1f}")
-            self.frame_count = 0
-            self.last_time = current_time
 
     def event_handler(self, event):
         code = event.get_code()

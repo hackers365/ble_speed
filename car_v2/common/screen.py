@@ -152,6 +152,7 @@ class Screen():
     def __init__(self): 
         self.init_screen()
         self.init_font()
+        self.init_fps()  # 添加 FPS 初始化
         
         # 初始化页面管理器
         self.page_manager = PageManager()
@@ -203,18 +204,44 @@ class Screen():
 
         self.myfont_en_100 = lv.binfont_create("S:%s/common/font/speed_num_consolas_100.bin" % script_path)
 
+    def init_fps(self):
+        """初始化 FPS 显示相关内容"""
+        # FPS 相关属性
+        self.last_time = 0
+        self.frame_count = 0
+        
+        # 创建 FPS 显示标签
+        self.fps_label = lv.label(self.screen)
+        self.fps_label.align(lv.ALIGN.BOTTOM_RIGHT, -10, -10)
+        self.fps_label.set_text('FPS: --')
+        self.fps_label.set_style_text_color(lv.color_hex(0xffffff), lv.PART.MAIN)
+        
+        # 创建 FPS 更新定时器
+        self.last_time = lv.tick_get()
+        lv.timer_create(self.update_fps, 1000, None)
+        
+    def update_fps(self, task):
+        """更新 FPS 显示"""
+        current_time = lv.tick_get()
+        elapsed = current_time - self.last_time
+        
+        if elapsed > 0:
+            fps = (self.frame_count * 1000) / elapsed
+            self.fps_label.set_text(f"FPS: {fps:.1f}")
+            self.frame_count = 0
+            self.last_time = current_time
+
 def Run():
     screen = Screen()
     resp = {"pid": '0D', 'value': 100}
 
     while True:
-        
         current_page = screen.page_manager.current_page
         if isinstance(current_page, MainPage):
             current_page.on_show(resp)
-            current_page.frame_count += 1
         
         lv.timer_handler_run_in_period(5)
+        screen.frame_count += 1  # 移到这里统计全局帧数
         resp['value'] += 1
 
 if __name__ == '__main__':
