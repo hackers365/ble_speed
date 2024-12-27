@@ -19,7 +19,7 @@ class LoadingPopup(BasePage):
             self.elements.append(bg)
             
             # 创建加载动画
-            lottie = self.show_lottie(self.screen ,"/rlottie/loading.json", 150, 150, 0, 0)
+            lottie = self.show_lottie(self.screen ,"/rlottie/loading.json", 100, 100, 0, 0)
             self.elements.append(lottie)
             
             # 创建加载文本
@@ -35,7 +35,7 @@ class LoadingPopup(BasePage):
                 self.page_manager.pop_popup()
                 timer.delete()
                 
-            timer = lv.timer_create(close_popup, 3000, None)
+            timer = lv.timer_create(close_popup, 10000, None)
             
         except Exception as e:
             print(f"Error initializing LoadingPopup: {e}") 

@@ -3,7 +3,7 @@ import lvgl as lv
 class BasePage:
     def __init__(self, baseScreen):
         self.baseScreen = baseScreen
-        self.screen = baseScreen.container
+        self.screen = baseScreen.screen
         self.page_manager = baseScreen.page_manager
         self.elements = []
         

@@ -20,8 +20,7 @@ class PageNode:
         self.next = None
 
 class PageManager:
-    def __init__(self, container):
-        self.screen = container
+    def __init__(self):
         self.head = None          # 链表头节点
         self.current = None       # 当前一级页面节点
         self.popup_stack = []     # 功能页面堆栈
@@ -153,26 +152,18 @@ class Screen():
     def __init__(self): 
         self.init_screen()
         self.init_font()
-
-        # 创建一个全屏容器来接收事件
-        self.container = lv.obj(self.screen)
-        self.container.set_size(lv.pct(100), lv.pct(100))
-        self.container.align(lv.ALIGN.CENTER, 0, 0)
-        self.container.set_style_bg_opa(0, 0)  # 设置透明背景
-                
-        # 初始化页面管理器
-        self.page_manager = PageManager(self.container)
         
-
+        # 初始化页面管理器
+        self.page_manager = PageManager()
         
         # 添加必要的标志
-        self.container.add_flag(lv.obj.FLAG.CLICKABLE)
-        self.container.add_flag(lv.obj.FLAG.GESTURE_BUBBLE)  # 允许手势冒泡
+        self.screen.add_flag(lv.obj.FLAG.CLICKABLE)
+        self.screen.add_flag(lv.obj.FLAG.GESTURE_BUBBLE)  # 允许手势冒泡
                 
         # 注册手势事件
-        self.container.add_event_cb(self.page_manager.handle_touch, lv.EVENT.PRESSED, None)
-        self.container.add_event_cb(self.page_manager.handle_touch, lv.EVENT.PRESSING, None)
-        self.container.add_event_cb(self.page_manager.handle_touch, lv.EVENT.RELEASED, None)
+        self.screen.add_event_cb(self.page_manager.handle_touch, lv.EVENT.PRESSED, None)
+        self.screen.add_event_cb(self.page_manager.handle_touch, lv.EVENT.PRESSING, None)
+        self.screen.add_event_cb(self.page_manager.handle_touch, lv.EVENT.RELEASED, None)
         
         # 添加一级页面
         main_page = MainPage(self)
