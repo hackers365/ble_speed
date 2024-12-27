@@ -150,24 +150,25 @@ class PageManager:
                 self.current_x = None
 
 class Screen():
-    def __init__(self):
-        self.screen = lv.screen_active()
+    def __init__(self): 
+        self.init_screen()
+        self.init_font()
+
         # 创建一个全屏容器来接收事件
         self.container = lv.obj(self.screen)
         self.container.set_size(lv.pct(100), lv.pct(100))
         self.container.align(lv.ALIGN.CENTER, 0, 0)
         self.container.set_style_bg_opa(0, 0)  # 设置透明背景
-        
+                
         # 初始化页面管理器
         self.page_manager = PageManager(self.container)
         
-        self.init_screen()
-        self.init_font()
+
         
         # 添加必要的标志
         self.container.add_flag(lv.obj.FLAG.CLICKABLE)
         self.container.add_flag(lv.obj.FLAG.GESTURE_BUBBLE)  # 允许手势冒泡
-        
+                
         # 注册手势事件
         self.container.add_event_cb(self.page_manager.handle_touch, lv.EVENT.PRESSED, None)
         self.container.add_event_cb(self.page_manager.handle_touch, lv.EVENT.PRESSING, None)
@@ -176,6 +177,7 @@ class Screen():
         # 添加一级页面
         main_page = MainPage(self)
         second_page = SecondPage(self)
+    
         
         # 将一级页面添加到链表
         self.page_manager.add_main_page(main_page)
@@ -215,6 +217,7 @@ def Run():
     resp = {"pid": '0D', 'value': 100}
 
     while True:
+        
         current_page = screen.page_manager.current_page
         if isinstance(current_page, MainPage):
             current_page.on_show(resp)
