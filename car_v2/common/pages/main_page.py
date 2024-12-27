@@ -1,13 +1,13 @@
 import lvgl as lv
 import time
 from .base_page import BasePage
+import cmd
 
 class MainPage(BasePage):
-    def __init__(self, screen):
-        super().__init__(screen.screen)
-        self.cmd = screen.cmd
-        self.script_path = screen.script_path
-        self.myfont_en_100 = screen.myfont_en_100
+    def __init__(self, baseScreen):
+        super().__init__(baseScreen)
+        self.script_path = baseScreen.script_path
+        self.myfont_en_100 = baseScreen.myfont_en_100
         
         # FPS计数相关
         self.last_time = 0
@@ -19,6 +19,10 @@ class MainPage(BasePage):
         self.genTitle()
         self.genUnit()
         self.genFps()
+        self.init_cmd()
+
+    def init_cmd(self):
+        self.cmd = cmd.Cmd()
 
     def genColorWheel(self):
         self.arc = lv.arc(self.screen)

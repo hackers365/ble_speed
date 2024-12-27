@@ -15,8 +15,7 @@ from pages.main_page import MainPage
 from pages.second_page import SecondPage
 
 class PageManager:
-    def __init__(self, container):
-        self.screen = container
+    def __init__(self):
         self.pages = []
         self.current_page_index = 0
         print("PageManager initialized")
@@ -93,7 +92,7 @@ class Screen():
         self.container.add_flag(lv.obj.FLAG.GESTURE_BUBBLE)  # 允许手势冒泡
         
         # 初始化页面管理器
-        self.page_manager = PageManager(self.container)
+        self.page_manager = PageManager()
         
         # 注册手势事件
         self.container.add_event_cb(self.page_manager.handle_touch, lv.EVENT.PRESSED, None)
