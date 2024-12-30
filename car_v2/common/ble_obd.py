@@ -12,7 +12,7 @@ import struct
 import time
 import micropython
 
-from ble_advertising import decode_services, decode_name
+from common.ble_advertising import decode_services, decode_name
 
 from micropython import const
 
@@ -276,6 +276,221 @@ class BleObd:
         else:
             print(recv_value)
         #elm_manager.append(recv_value)
+
+
+class BleScan:
+    def __init__(self):
+        self.ble = bluetooth.BLE()
+        self.ble.active(True)
+        self.ble.irq(self._irq)
+        self._reset()
+        
+    def _reset(self):
+        self._scan_callback = None
+        self._completion_callback = None
+        self._conn_callback = None
+        self.devices = []  # 存储发现的设备列表 [(addr_type, addr, name, rssi), ...]
+        
+        # 连接相关
+        self._addr_type = None
+        self._addr = None
+        self._conn_handle = None
+        self._services = []  # [(start_handle, end_handle, uuid), ...]
+        self._current_service_index = 0  # 当前正在处理的服务索引
+        self._tx_char = None
+        self._rx_char = None
+        self._service_uuid = None
+        
+    def _discover_next_service_characteristics(self):
+        """发现下一个服务的特征值"""
+        try:
+            if self._current_service_index < len(self._services):
+                start_handle, end_handle, uuid = self._services[self._current_service_index]
+                #print(f"服务 UUID: {self._services[self._current_service_index]}")
+                #print(f"开始发现服务 {self._current_service_index + 1}/{len(self._services)} 的特征值")
+                self.ble.gattc_discover_characteristics(
+                    self._conn_handle, start_handle, end_handle
+                )
+            else:
+                # 所有服务的特征值都已发现完成
+                if self._tx_char and self._rx_char:
+                    print("找到完整的UART服务")
+                    if self._conn_callback:
+                        self._conn_callback(True, self._service_uuid, self._tx_char, self._rx_char)
+                else:
+                    print("未找到所需的特征值")
+                    if self._conn_callback:
+                        self._conn_callback(False, None, None, None)
+                    self.disconnect()
+        except OSError as e:
+            print(f"发现特征值失败: {e}")
+            if self._conn_callback:
+                self._conn_callback(False, None, None, None)
+            self.disconnect()
+        
+    def _irq(self, event, data):
+        try:
+            if event == _IRQ_SCAN_RESULT:
+                addr_type, addr, adv_type, rssi, adv_data = data
+                addr_str = ":".join(["{:02X}".format(b) for b in addr])
+                name = decode_name(adv_data)
+                if not name:
+                    name = "Unknown"
+                    
+                # 检查是否已存在该设备
+                for dev in self.devices:
+                    if dev[1] == addr_str:
+                        return
+                        
+                self.devices.append((addr_type, addr_str, name, rssi))
+                if self._scan_callback:
+                    self._scan_callback(self.devices)
+                    
+            elif event == _IRQ_SCAN_DONE:
+                if self._completion_callback:  # 扫描完成时调用完成回调
+                    self._completion_callback()
+                    
+            elif event == _IRQ_PERIPHERAL_CONNECT:
+                # 连接成功
+                conn_handle, addr_type, addr = data
+                if addr_type == self._addr_type and addr == self._addr:
+                    self._conn_handle = conn_handle
+                    print("连接成功，开始发现服务...")
+                    self._services = []
+                    self._current_service_index = 0
+                    self._tx_char = None
+                    self._rx_char = None
+                    self._service_uuid = None
+                    try:
+                        self.ble.gattc_discover_services(self._conn_handle)
+                    except OSError as e:
+                        print("发现服务失败:", e)
+                        if self._conn_callback:
+                            self._conn_callback(False, None, None, None)
+                        self.disconnect()
+
+            elif event == _IRQ_PERIPHERAL_DISCONNECT:
+                # 断开连接
+                conn_handle, _, _ = data
+                if conn_handle == self._conn_handle:
+                    self._reset()
+                    print("设备已断开连接")
+
+            elif event == _IRQ_GATTC_SERVICE_RESULT:
+                # 发现服务
+                conn_handle, start_handle, end_handle, uuid = data
+                if conn_handle == self._conn_handle:
+                    print(f"发现服务: UUID({uuid}), 范围: {start_handle}-{end_handle}")
+                    self._services.append((start_handle, end_handle, uuid))
+
+            elif event == _IRQ_GATTC_SERVICE_DONE:
+                # 服务发现完成
+                if self._services:
+                    print(f"发现了 {len(self._services)} 个服务，开始发现特征值...")
+                    self._discover_next_service_characteristics()
+                else:
+                    print("未找到任何服务")
+                    if self._conn_callback:
+                        self._conn_callback(False, None, None, None)
+                    self.disconnect()
+
+            elif event == _IRQ_GATTC_CHARACTERISTIC_RESULT:
+                # 发现特征值
+                conn_handle, def_handle, value_handle, properties, uuid = data
+                if conn_handle == self._conn_handle:
+                    print(f"发现特征值: UUID({uuid}), handle: {value_handle}, 属性: {properties}")
+                    # 检查是否是TX特征值（具有notify属性）
+                    if properties & 0x10:  # 0x10 是 notify 属性
+                        print("找到TX特征值（notify）")
+                        self._tx_char = uuid
+                        start_handle, end_handle, service_uuid = self._services[self._current_service_index]
+                        self._service_uuid = service_uuid
+                    # 检查是否是RX特征值（具有write属性）
+                    elif properties & 0x08:  # 0x08 是 write 属性
+                        print("找到RX特征值（write）")
+                        self._rx_char = uuid
+
+            elif event == _IRQ_GATTC_CHARACTERISTIC_DONE:
+                # 当前服务的特征值发现完成，继续处理下一个服务
+                self._current_service_index += 1
+                self._discover_next_service_characteristics()
+                        
+        except Exception as e:
+            print(f"蓝牙操作错误: {e}")
+            if self._conn_callback:
+                self._conn_callback(False, None, None, None)
+            try:
+                self.disconnect()
+            except:
+                pass
+            
+    def connect(self, addr_type, addr, callback=None):
+        """
+        连接到指定设备
+        :param addr_type: 地址类型
+        :param addr: 设备地址
+        :param callback: 连接回调，参数为 (success, tx_handle, rx_handle)
+            - success: 是否成功
+            - tx_handle: 用于notify的特征值handle
+            - rx_handle: 用于write的特征值handle
+        """
+        try:
+            self._addr_type = addr_type
+            self._addr = addr
+            self._conn_callback = callback
+            self.ble.gap_connect(self._addr_type, self._addr)
+            return True
+        except Exception as e:
+            print("连接失败:", e)
+            if callback:
+                callback(False, None, None, None)
+            return False
+        
+    def disconnect(self):
+        """断开当前连接"""
+        if self._conn_handle is not None:
+            try:
+                self.ble.gap_disconnect(self._conn_handle)
+                self.ble.active(False)
+                return True
+            except Exception as e:
+                print("断开连接失败:", e)
+                return False
+        return False
+        
+    def is_connected(self):
+        """检查是否已连接"""
+        return self._conn_handle is not None
+
+    def start_scan(self, callback=None, duration_ms=5000, completion_callback=None):
+        """
+        开始扫描BLE设备
+        :param callback: 每发现新设备时的回调函数，参数为设备列表
+        :param duration_ms: 扫描持续时间(毫秒)
+        :param completion_callback: 扫描完成时的回调函数
+        """
+        self._reset()
+        self._scan_callback = callback
+        self._completion_callback = completion_callback
+        try:
+            # 参数说明：
+            # duration_ms: 扫描持续时间
+            # interval_us: 扫描间隔 (微秒)
+            # window_us: 扫描窗口 (微秒)
+            self.ble.gap_scan(duration_ms, 30000, 30000)
+            return True
+        except Exception as e:
+            print("扫描失败:", e)
+            return False
+            
+    def stop_scan(self):
+        """停止扫描"""
+        try:
+            self.ble.gap_scan(None)
+            return True
+        except Exception as e:
+            print("停止扫描失败:", e)
+            return False
 
 
 '''
