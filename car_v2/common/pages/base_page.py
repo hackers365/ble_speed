@@ -13,7 +13,7 @@ class BasePage:
     def destroy(self):
         for element in self.elements:
             element.delete()
-        self.elements.clear() 
+        self.elements.clear()
     def show_lottie(self, obj, file_path, w, h, x, y):
         """
         显示 lottie 动画
@@ -36,4 +36,3 @@ class BasePage:
         except Exception as e:
             print(f"Error creating lottie animation: {e}")
             return None
-        

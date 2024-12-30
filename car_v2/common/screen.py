@@ -75,7 +75,7 @@ class PageManager:
         """压入功能页面"""
         page.is_popup = True  # 标记为功能页面
         if not self.popup_stack:
-            # 第一个功能页面不需要销毁前一个
+            self.current.page.destroy()
             self.popup_stack.append(page)
             page.init()
         else:
@@ -92,6 +92,8 @@ class PageManager:
             # 如果还有功能页面，显示上一个
             if self.popup_stack:
                 self.popup_stack[-1].init()
+            else:
+                self.current.page.init()
             return True
         return False
     
@@ -212,7 +214,7 @@ class Screen():
         
         # 创建 FPS 显示标签
         self.fps_label = lv.label(self.screen)
-        self.fps_label.align(lv.ALIGN.BOTTOM_RIGHT, -10, -10)
+        self.fps_label.align(lv.ALIGN.CENTER, 0, 100)
         self.fps_label.set_text('FPS: --')
         self.fps_label.set_style_text_color(lv.color_hex(0xffffff), lv.PART.MAIN)
         
@@ -227,6 +229,8 @@ class Screen():
         
         if elapsed > 0:
             fps = (self.frame_count * 1000) / elapsed
+            if fps > 30:
+                fps = 30
             self.fps_label.set_text(f"FPS: {fps:.1f}")
             self.frame_count = 0
             self.last_time = current_time
@@ -246,5 +250,6 @@ def Run():
 
 if __name__ == '__main__':
     Run()
+
 
 
