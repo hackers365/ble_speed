@@ -1,5 +1,5 @@
 import usys as sys
-sys.path.append('/common')
+#sys.path.append('/common')
 
 import micropython, gc
 import time
@@ -12,6 +12,7 @@ import fs_driver
 
 from pages.main_page import MainPage
 from pages.second_page import SecondPage
+from common.config import Config
 
 class PageNode:
     def __init__(self, page):
@@ -83,10 +84,12 @@ class PageManager:
             self.popup_stack[-1].destroy()
             self.popup_stack.append(page)
             page.init()
+        print(len(self.popup_stack))
     
     def pop_popup(self):
         """弹出功能页面"""
         if self.popup_stack:
+            print("pop_popup")
             current_popup = self.popup_stack.pop()
             current_popup.destroy()
             # 如果还有功能页面，显示上一个
@@ -151,7 +154,8 @@ class PageManager:
                 self.current_x = None
 
 class Screen():
-    def __init__(self): 
+    def __init__(self):
+        self.config = Config()  # 初始化配置对象
         self.init_screen()
         self.init_font()
         self.init_fps()  # 添加 FPS 初始化
@@ -171,15 +175,17 @@ class Screen():
         # 添加一级页面
         main_page = MainPage(self)
         second_page = SecondPage(self)
-    
         
         # 将一级页面添加到链表
         self.page_manager.add_main_page(main_page)
         self.page_manager.add_main_page(second_page)
-
-
+            
+    def get_config(self):
+        """获取配置对象"""
+        return self.config
+        
     def init_screen(self):
-        wrapper = lvgl_esp32.Wrapper(display, touch)
+        wrapper = lvgl_esp32.Wrapper(display, touch,use_spiram=True, buf_lines=24)
         wrapper.init()
 
         display.brightness(60)
@@ -194,6 +200,7 @@ class Screen():
         self.screen = lv.screen_active()
         self.screen.set_style_bg_color(lv.color_hex(0x000000), lv.PART.MAIN | lv.STATE.DEFAULT)
         self.screen.set_style_bg_opa(255, lv.PART.MAIN | lv.STATE.DEFAULT)
+
         
     def init_font(self):
         try:
@@ -204,7 +211,7 @@ class Screen():
         fs_drv = lv.fs_drv_t()
         fs_driver.fs_register(fs_drv, 'S')
 
-        self.myfont_en_100 = lv.binfont_create("S:%s/common/font/speed_num_consolas_100.bin" % script_path)
+        self.myfont_en_100 = lv.binfont_create("S:%s/font/speed_num_consolas_100.bin" % script_path)
 
     def init_fps(self):
         """初始化 FPS 显示相关内容"""
@@ -221,6 +228,10 @@ class Screen():
         # 创建 FPS 更新定时器
         self.last_time = lv.tick_get()
         lv.timer_create(self.update_fps, 1000, None)
+    def on_show(self, resp):
+        current_page = self.page_manager.current_page
+        if isinstance(current_page, MainPage):
+            current_page.on_show(resp)
         
     def update_fps(self, task):
         """更新 FPS 显示"""
@@ -234,22 +245,20 @@ class Screen():
             self.fps_label.set_text(f"FPS: {fps:.1f}")
             self.frame_count = 0
             self.last_time = current_time
-
+'''
 def Run():
     screen = Screen()
     resp = {"pid": '0D', 'value': 100}
 
     while True:
+
         current_page = screen.page_manager.current_page
         if isinstance(current_page, MainPage):
             current_page.on_show(resp)
-        
         lv.timer_handler_run_in_period(5)
         screen.frame_count += 1  # 移到这里统计全局帧数
         resp['value'] += 1
 
 if __name__ == '__main__':
     Run()
-
-
-
+'''

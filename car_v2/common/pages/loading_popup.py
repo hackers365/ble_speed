@@ -3,6 +3,7 @@ import lvgl as lv
 from .base_page import BasePage
 import bluetooth
 import gc
+from common.config import Config
 
 class LoadingPopup(BasePage):
     def __init__(self, baseScreen):
@@ -11,6 +12,8 @@ class LoadingPopup(BasePage):
         self.lottie = None
         self.found_devices = []  # 存储设备信息
         self.list = None
+        # 使用 Screen 的配置对象
+        self.config = self.baseScreen.get_config()
         
     def init(self):
         super().init()
@@ -40,21 +43,34 @@ class LoadingPopup(BasePage):
         print(f"\n正在连接设备: {name}")
         self.ble_scanner.stop_scan()
         
-        def on_connect(success, uuid, tx_char, rx_char):
-            if success:
-                print("\n连接成功！")
-                #print(f"服务 UUID: {uuid}")
-                #print(f"TX 特征值: {tx_char}")
-                print(f"RX 特征值: {rx_char}")
-            else:
-                print("连接失败或未发现服务")
-            print('hello')
-            # 断开连接并关闭弹窗
-            self.ble_scanner.disconnect()
-            self.page_manager.pop_popup()
+        # 直接连接设备，阻塞等待结果
+        success, uuid, tx_char, rx_char = self.ble_scanner.connect(addr_type, addr)
+        
+        if success:
+            print("\n连接成功！")
+            print(f"RX 特征值: {rx_char}")
+            print(f"TX 特征值: {tx_char}")
             
-        # 连接到设备
-        self.ble_scanner.connect(addr_type, addr, callback=on_connect)
+            # 使用 Config 类更新蓝牙配置
+            try:
+                # 提取 UUID 字符串的辅助函数
+                def clean_uuid(uuid_str):
+                    return str(uuid_str).split("'")[1] if "UUID" in str(uuid_str) else str(uuid_str)
+                
+                self.config.set('bluetooth', 'uuid', clean_uuid(uuid))
+                self.config.set('bluetooth', 'tx_char', clean_uuid(tx_char))
+                self.config.set('bluetooth', 'rx_char', clean_uuid(rx_char))
+                self.config.set('bluetooth', 'device_name', name)
+                self.config.set('bluetooth', 'device_addr', addr.hex(':').upper())
+                print("设备信息已保存到配置文件")
+            except Exception as e:
+                print(f"保存配置文件失败: {e}")
+        else:
+            print("连接失败或未发现服务")
+        
+        # 断开连接并关闭弹窗
+        self.ble_scanner.destroy()
+        self.page_manager.pop_popup()
         
     def show_message(self, text, timeout_ms=2000):
         """显示提示消息"""
@@ -113,6 +129,7 @@ class LoadingPopup(BasePage):
         print("after BleScan")
         self.found_devices = []  # 清空设备列表
         # 显示加载动画
+
         self.lottie = self.show_lottie(
             self.screen,
             "/rlottie/loading.json",  # 请确保这是正确的动画文件路径
@@ -121,8 +138,9 @@ class LoadingPopup(BasePage):
             0,    # x偏移
             0     # y偏移
         )
+
         self.ble_scanner.start_scan(callback=self.on_devices_found, duration_ms=5000, completion_callback=self.on_scan_complete)
-        
+
     def on_destroy(self):
         """页面销毁时清理"""
         if self.ble_scanner:

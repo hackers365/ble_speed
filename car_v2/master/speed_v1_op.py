@@ -79,7 +79,7 @@ async def read_data(bo, data_manager, end_marker=ELM_PROMPT, timeout=None):
     while True:
         current_time = time.ticks_ms()
         if time.ticks_diff(current_time, start_time) > timeout:
-            return False
+            return ret
             
         if not data_manager.raw_data_empty():
             data = data_manager.get_raw_data()
@@ -141,33 +141,41 @@ async def display_data(data_manager, scr):
         lv.timer_handler_run_in_period(5)
         await asyncio.sleep_ms(5)
 
+
 async def iRun():
     # 初始化 ESP-NOW
+    '''
     def esp_now_recv(mac, msg):
         pass
     en = esp_now.EspN(esp_now_recv)
     en.Run()
     bcast = b'\xff\xff\xff\xff\xff\xff'
     en.AddPeer(bcast)
-
+    '''    
     #初始化屏幕
     scr = screen.Screen()  # 初始化屏幕
 
     # 初始化其他组件
-    es = elm_stream.ELM327Stream()  # 简化回调
-    pidCmd = cmd.Cmd()
     data_manager = DataManager()
     
+    es = elm_stream.ELM327Stream()  # 简化回调
+    pidCmd = cmd.Cmd()
+
     def on_value(v):
         data_manager.put_raw_data(v)
+    print("before bleobd")
     
+    '''
     bo = BleObd(on_value)
-
+    print("after bleobd")
+    '''
     lv.timer_handler_run_in_period(5)
+    print("before run tasks")
     # 创建并运行所有任务
+    
     tasks = [
-        asyncio.create_task(collect_data(bo, pidCmd, data_manager)),
-        asyncio.create_task(broadcast_data(en, bcast, data_manager)),
+        #asyncio.create_task(collect_data(bo, pidCmd, data_manager)),
+        #asyncio.create_task(broadcast_data(en, bcast, data_manager)),
         asyncio.create_task(parse_data(data_manager, es)),
         asyncio.create_task(display_data(data_manager, scr))
     ]

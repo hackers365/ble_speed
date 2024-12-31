@@ -41,18 +41,18 @@ _ADV_DIRECT_IND = const(0x01)
 _ADV_SCAN_IND = const(0x02)
 _ADV_NONCONN_IND = const(0x03)
 
-'''
 _UART_SERVICE_UUID = bluetooth.UUID("6E400001-B5A3-F393-E0A9-E50E24DCCA9E")
 _UART_RX_CHAR_UUID = bluetooth.UUID("6E400002-B5A3-F393-E0A9-E50E24DCCA9E")
 _UART_TX_CHAR_UUID = bluetooth.UUID("6E400003-B5A3-F393-E0A9-E50E24DCCA9E")
 target_addr = "C8:C9:A3:D5:F1:26"
-'''
 
+
+'''
 _UART_SERVICE_UUID = bluetooth.UUID(0x18f0)
 _UART_RX_CHAR_UUID = bluetooth.UUID(0x2af1)
 _UART_TX_CHAR_UUID = bluetooth.UUID(0x2af0)
 target_addr = "C0:48:46:E7:F0:B8"
-
+'''
 class BLESimpleCentral:
     def __init__(self, ble):
         self._ble = ble
@@ -288,7 +288,6 @@ class BleScan:
     def _reset(self):
         self._scan_callback = None
         self._completion_callback = None
-        self._conn_callback = None
         self.devices = []  # 存储发现的设备列表 [(addr_type, addr, name, rssi), ...]
         
         # 连接相关
@@ -296,11 +295,152 @@ class BleScan:
         self._addr = None
         self._conn_handle = None
         self._services = []  # [(start_handle, end_handle, uuid), ...]
-        self._current_service_index = 0  # 当前正在处理的服务索引
+        self._services_uuid = []
+        self._current_service_index = 0
         self._tx_char = None
         self._rx_char = None
         self._service_uuid = None
         
+        # 连接状态标志
+        self._connection_complete = False
+        self._connection_success = False
+        self._characteristic_discovery_complete = False
+        
+    def connect(self, addr_type, addr):
+        """
+        阻塞式连接到指定设备
+        :param addr_type: 地址类型
+        :param addr: 设备地址
+        :return: (success, uuid, tx_char, rx_char)
+        """
+        try:
+            self._connection_complete = False
+            self._connection_success = False
+            self._characteristic_discovery_complete = False
+            self._addr_type = addr_type
+            self._addr = addr
+            
+            # 开始连接
+            print("开始连接设备...")
+            self.ble.gap_connect(self._addr_type, self._addr)
+            
+            # 等待连接完成
+            timeout = 100  # 10秒超时
+            while not self._connection_complete and timeout > 0:
+                time.sleep_ms(100)
+                timeout -= 1
+                
+            if timeout <= 0 or not self._connection_success:
+                print("连接超时或失败")
+                return False, None, None, None
+                
+            # 等待特征值发现完成
+            timeout = 100  # 再次给10秒用于发现服务
+            while not self._characteristic_discovery_complete and timeout > 0:
+                time.sleep_ms(100)
+                timeout -= 1
+                
+            if timeout <= 0:
+                print("发现服务超时")
+                self.disconnect()
+                return False, None, None, None
+                
+            if self._tx_char and self._rx_char:
+                print("连接成功，服务发现完成")
+                return True, self._service_uuid, self._tx_char, self._rx_char
+            else:
+                print("未找到所需的特征值")
+                self.disconnect()
+                return False, None, None, None
+                
+        except Exception as e:
+            print(f"连接过程出错: {e}")
+            try:
+                self.disconnect()
+            except:
+                pass
+            return False, None, None, None
+            
+    def _irq(self, event, data):
+        try:
+            if event == _IRQ_SCAN_RESULT:
+                addr_type, addr, adv_type, rssi, adv_data = data
+                addr_str = ":".join(["{:02X}".format(b) for b in addr])
+                name = decode_name(adv_data)
+                if not name:
+                    name = "Unknown"
+                    
+                # 检查是否已存在该设备
+                for dev in self.devices:
+                    if dev[1] == addr_str:
+                        return
+                        
+                self.devices.append((addr_type, addr_str, name, rssi))
+                if self._scan_callback:
+                    self._scan_callback(self.devices)
+                    
+            elif event == _IRQ_SCAN_DONE:
+                if self._completion_callback:  # 扫描完成时调用完成回调
+                    self._completion_callback()
+                    
+            elif event == _IRQ_PERIPHERAL_CONNECT:
+                conn_handle, addr_type, addr = data
+                if addr_type == self._addr_type and addr == self._addr:
+                    self._conn_handle = conn_handle
+                    self._connection_success = True
+                    print("连接成功，开始发现服务...")
+                    try:
+                        self.ble.gattc_discover_services(self._conn_handle)
+                    except OSError as e:
+                        print("发现服务失败:", e)
+                        self._connection_complete = True
+                        
+            elif event == _IRQ_PERIPHERAL_DISCONNECT:
+                conn_handle, _, _ = data
+                if conn_handle == self._conn_handle:
+                    self._reset()
+                    print("设备已断开连接")
+                    
+            elif event == _IRQ_GATTC_SERVICE_RESULT:
+                conn_handle, start_handle, end_handle, uuid = data
+                if conn_handle == self._conn_handle:
+                    # 直接将 UUID 转换为字符串
+                    uuid_str = str(uuid)
+                    self._services.append((start_handle, end_handle, uuid_str))
+                    
+            elif event == _IRQ_GATTC_SERVICE_DONE:
+                self._connection_complete = True
+                if self._services:
+                    print(f"发现了 {len(self._services)} 个服务，开始发现特征值...")
+                    self._discover_next_service_characteristics()
+                else:
+                    print("未找到任何服务")
+                    self._characteristic_discovery_complete = True
+                    
+            elif event == _IRQ_GATTC_CHARACTERISTIC_RESULT:
+                conn_handle, def_handle, value_handle, properties, uuid = data
+                if conn_handle == self._conn_handle:
+                    if properties & 0x10:  # notify 属性
+                        self._tx_char = uuid
+                    elif properties & 0x08:  # write 属性
+                        self._rx_char = uuid
+                        
+            elif event == _IRQ_GATTC_CHARACTERISTIC_DONE:
+                if self._tx_char and self._rx_char:
+                    _, _, self._service_uuid = self._services[self._current_service_index]
+                    self._characteristic_discovery_complete = True
+                    return
+                self._current_service_index += 1
+                if self._current_service_index < len(self._services):
+                    self._discover_next_service_characteristics()
+                else:
+                    self._characteristic_discovery_complete = True
+                    
+        except Exception as e:
+            print(f"IRQ处理错误: {e}")
+            self._connection_complete = True
+            self._characteristic_discovery_complete = True
+            
     def _discover_next_service_characteristics(self):
         """发现下一个服务的特征值"""
         try:
@@ -328,130 +468,11 @@ class BleScan:
                 self._conn_callback(False, None, None, None)
             self.disconnect()
         
-    def _irq(self, event, data):
-        try:
-            if event == _IRQ_SCAN_RESULT:
-                addr_type, addr, adv_type, rssi, adv_data = data
-                addr_str = ":".join(["{:02X}".format(b) for b in addr])
-                name = decode_name(adv_data)
-                if not name:
-                    name = "Unknown"
-                    
-                # 检查是否已存在该设备
-                for dev in self.devices:
-                    if dev[1] == addr_str:
-                        return
-                        
-                self.devices.append((addr_type, addr_str, name, rssi))
-                if self._scan_callback:
-                    self._scan_callback(self.devices)
-                    
-            elif event == _IRQ_SCAN_DONE:
-                if self._completion_callback:  # 扫描完成时调用完成回调
-                    self._completion_callback()
-                    
-            elif event == _IRQ_PERIPHERAL_CONNECT:
-                # 连接成功
-                conn_handle, addr_type, addr = data
-                if addr_type == self._addr_type and addr == self._addr:
-                    self._conn_handle = conn_handle
-                    print("连接成功，开始发现服务...")
-                    self._services = []
-                    self._current_service_index = 0
-                    self._tx_char = None
-                    self._rx_char = None
-                    self._service_uuid = None
-                    try:
-                        self.ble.gattc_discover_services(self._conn_handle)
-                    except OSError as e:
-                        print("发现服务失败:", e)
-                        if self._conn_callback:
-                            self._conn_callback(False, None, None, None)
-                        self.disconnect()
-
-            elif event == _IRQ_PERIPHERAL_DISCONNECT:
-                # 断开连接
-                conn_handle, _, _ = data
-                if conn_handle == self._conn_handle:
-                    self._reset()
-                    print("设备已断开连接")
-
-            elif event == _IRQ_GATTC_SERVICE_RESULT:
-                # 发现服务
-                conn_handle, start_handle, end_handle, uuid = data
-                if conn_handle == self._conn_handle:
-                    print(f"发现服务: UUID({uuid}), 范围: {start_handle}-{end_handle}")
-                    self._services.append((start_handle, end_handle, uuid))
-
-            elif event == _IRQ_GATTC_SERVICE_DONE:
-                # 服务发现完成
-                if self._services:
-                    print(f"发现了 {len(self._services)} 个服务，开始发现特征值...")
-                    self._discover_next_service_characteristics()
-                else:
-                    print("未找到任何服务")
-                    if self._conn_callback:
-                        self._conn_callback(False, None, None, None)
-                    self.disconnect()
-
-            elif event == _IRQ_GATTC_CHARACTERISTIC_RESULT:
-                # 发现特征值
-                conn_handle, def_handle, value_handle, properties, uuid = data
-                if conn_handle == self._conn_handle:
-                    print(f"发现特征值: UUID({uuid}), handle: {value_handle}, 属性: {properties}")
-                    # 检查是否是TX特征值（具有notify属性）
-                    if properties & 0x10:  # 0x10 是 notify 属性
-                        print("找到TX特征值（notify）")
-                        self._tx_char = uuid
-                        start_handle, end_handle, service_uuid = self._services[self._current_service_index]
-                        self._service_uuid = service_uuid
-                    # 检查是否是RX特征值（具有write属性）
-                    elif properties & 0x08:  # 0x08 是 write 属性
-                        print("找到RX特征值（write）")
-                        self._rx_char = uuid
-
-            elif event == _IRQ_GATTC_CHARACTERISTIC_DONE:
-                # 当前服务的特征值发现完成，继续处理下一个服务
-                self._current_service_index += 1
-                self._discover_next_service_characteristics()
-                        
-        except Exception as e:
-            print(f"蓝牙操作错误: {e}")
-            if self._conn_callback:
-                self._conn_callback(False, None, None, None)
-            try:
-                self.disconnect()
-            except:
-                pass
-            
-    def connect(self, addr_type, addr, callback=None):
-        """
-        连接到指定设备
-        :param addr_type: 地址类型
-        :param addr: 设备地址
-        :param callback: 连接回调，参数为 (success, tx_handle, rx_handle)
-            - success: 是否成功
-            - tx_handle: 用于notify的特征值handle
-            - rx_handle: 用于write的特征值handle
-        """
-        try:
-            self._addr_type = addr_type
-            self._addr = addr
-            self._conn_callback = callback
-            self.ble.gap_connect(self._addr_type, self._addr)
-            return True
-        except Exception as e:
-            print("连接失败:", e)
-            if callback:
-                callback(False, None, None, None)
-            return False
-        
     def disconnect(self):
         """断开当前连接"""
         if self._conn_handle is not None:
             try:
                 self.ble.gap_disconnect(self._conn_handle)
-                self.ble.active(False)
                 return True
             except Exception as e:
                 print("断开连接失败:", e)
@@ -477,7 +498,9 @@ class BleScan:
             # duration_ms: 扫描持续时间
             # interval_us: 扫描间隔 (微秒)
             # window_us: 扫描窗口 (微秒)
+            print("before gap_scan")
             self.ble.gap_scan(duration_ms, 30000, 30000)
+            print("after gap_scan")
             return True
         except Exception as e:
             print("扫描失败:", e)
@@ -492,7 +515,12 @@ class BleScan:
             print("停止扫描失败:", e)
             return False
 
-
+    def destroy(self):
+        self.disconnect()
+        print("after disconnect")
+        self.ble.active(False)
+        print("after ble.active(False)")
+        self._reset()
 '''
 def demo(scr):
     ble = bluetooth.BLE()

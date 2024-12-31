@@ -5,6 +5,8 @@ from .loading_popup import LoadingPopup
 class SecondPage(BasePage):
     def __init__(self, baseScreen):
         super().__init__(baseScreen)
+        # 使用 Screen 的配置对象
+        self.config = self.baseScreen.get_config()
         
     def init(self):
         try:
