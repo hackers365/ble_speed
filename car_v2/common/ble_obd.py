@@ -276,6 +276,14 @@ class BleObd:
         else:
             print(recv_value)
         #elm_manager.append(recv_value)
+    def destroy(self):
+        try:
+            self.central.disconnect()
+            self.central = None
+            self.ble.active(False)
+            self.ble = None
+        except Exception as e:
+            print(f"Destroy error: {e}")
 
 
 class BleScan:

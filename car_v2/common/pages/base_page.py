@@ -8,9 +8,11 @@ class BasePage:
         self.elements = []
         
     def init(self):
+        """初始化页面，子类需要重写此方法"""
         pass
         
     def destroy(self):
+        """销毁页面，清理资源"""
         for element in self.elements:
             element.delete()
         self.elements.clear()
