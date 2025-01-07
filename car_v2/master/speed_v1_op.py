@@ -12,10 +12,8 @@ async def main():
     # 主循环
     while True:
         lv.timer_handler_run_in_period(5)
-        # 更新FPS显示
-        if scr.fps_counter.update():
-            scr.fps_label.set_text(f"FPS: {scr.fps_counter.fps}")
         await asyncio.sleep_ms(5)
+        
 
 def Run():
     asyncio.run(main())

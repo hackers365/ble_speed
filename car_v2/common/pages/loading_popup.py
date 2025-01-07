@@ -4,6 +4,7 @@ from .base_page import BasePage
 import bluetooth
 import gc
 from common.config import Config
+import time
 
 class LoadingPopup(BasePage):
     def __init__(self, baseScreen):
@@ -15,9 +16,15 @@ class LoadingPopup(BasePage):
         # 使用 Screen 的配置对象
         self.config = self.baseScreen.get_config()
         
+        # 从配置文件获取UUID
+        ble_config = self.config.get_bluetooth_config()
+        self.service_uuid = ble_config.get('uuid', "")
+        self.rx_char_uuid = ble_config.get('rx_char', "")
+        self.tx_char_uuid = ble_config.get('tx_char', "")
+        
     def init(self):
         super().init()
-        
+
         # 创建标题
         title = lv.label(self.screen)
         title.set_text("扫描蓝牙设备")
@@ -51,34 +58,31 @@ class LoadingPopup(BasePage):
             print(f"RX 特征值: {rx_char}")
             print(f"TX 特征值: {tx_char}")
             
-            # 使用 Config 类更新蓝牙配置
+            # 使用 set_bluetooth_config 批量保存配置
             try:
                 # 提取 UUID 字符串的辅助函数
                 def clean_uuid(uuid_str):
                     return str(uuid_str).split("'")[1] if "UUID" in str(uuid_str) else str(uuid_str)
                 
-                self.config.set('bluetooth', 'uuid', clean_uuid(uuid))
-                self.config.set('bluetooth', 'tx_char', clean_uuid(tx_char))
-                self.config.set('bluetooth', 'rx_char', clean_uuid(rx_char))
-                self.config.set('bluetooth', 'device_name', name)
-                self.config.set('bluetooth', 'device_addr', addr.hex(':').upper())
+                self.config.set_bluetooth_config(
+                    uuid=clean_uuid(uuid),
+                    tx_char=clean_uuid(tx_char),
+                    rx_char=clean_uuid(rx_char),
+                    device_name=name,
+                    device_addr=addr.hex(':').upper()
+                )
                 print("设备信息已保存到配置文件")
             except Exception as e:
                 print(f"保存配置文件失败: {e}")
+            # 断开连接并关闭弹窗
+            def complete():
+                self.ble_scanner.destroy()
+                self.page_manager.pop_popup()
+            self.show_msgbox("save ok", user_callback=complete)
         else:
+            self.show_msgbox("connect fail")
             print("连接失败或未发现服务")
         
-        # 断开连接并关闭弹窗
-        self.ble_scanner.destroy()
-        self.page_manager.pop_popup()
-        
-    def show_message(self, text, timeout_ms=2000):
-        """显示提示消息"""
-        mbox = lv.msgbox(self.screen)  # 创建消息框并指定父对象
-        mbox.set_text(text)            # 设置消息文本
-        mbox.center()                  # 居中显示
-        # 设置定时器自动关闭
-        lv.timer_create(lambda t: mbox.delete(), timeout_ms, None)
         
     def create_device_list(self):
         """创建设备列表"""
@@ -124,23 +128,12 @@ class LoadingPopup(BasePage):
         # 创建新的扫描器实例
         if self.ble_scanner:
             self.ble_scanner.disconnect()
+        self.lottie = self.show_lottie(self.screen,"/rlottie/loading.json", 150, 150, 0, 0)
         print("before BleScan")
         self.ble_scanner = BleScan()
         print("after BleScan")
         self.found_devices = []  # 清空设备列表
-        # 显示加载动画
-
-        self.lottie = self.show_lottie(
-            self.screen,
-            "/rlottie/loading.json",  # 请确保这是正确的动画文件路径
-            150,  # 宽度
-            150,  # 高度
-            0,    # x偏移
-            0     # y偏移
-        )
-
         self.ble_scanner.start_scan(callback=self.on_devices_found, duration_ms=5000, completion_callback=self.on_scan_complete)
-
     def on_destroy(self):
         """页面销毁时清理"""
         if self.ble_scanner:

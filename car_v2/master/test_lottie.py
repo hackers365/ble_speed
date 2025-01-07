@@ -13,12 +13,14 @@ import time
 import esp_now
 import gc
 import esp_now
+from ble_obd import BleScan
+from lv_example_rlottie_approve import lv_example_rlottie_approve
 
-wrapper = lvgl_esp32.Wrapper(display,touch,use_spiram=True, buf_lines=48)
+wrapper = lvgl_esp32.Wrapper(display,touch,use_spiram=True, buf_lines=96)
 #wrapper = lvgl_esp32.Wrapper(display,touch,use_spiram=True, buf_lines=48)
 wrapper.init()
 os.listdir('/sd')
-display.brightness(100)
+display.brightness(60)
 #顺时转180度
 display.swapXY(False)
 display.mirrorX(True)
@@ -30,10 +32,12 @@ touch.mirrorY(True)
 print(wrapper.get_dma_size())
 
 screen = lv.screen_active()
-#screen.set_style_bg_color(lv.color_hex(0x000000), lv.PART.MAIN | lv.STATE.DEFAULT)
-#screen.set_style_bg_opa(255, lv.PART.MAIN | lv.STATE.DEFAULT)
-
-screen.set_style_bg_color(lv.color_hex(0x202020), lv.PART.MAIN | lv.STATE.DEFAULT)
+screen.set_style_bg_color(lv.color_hex(0x000000), lv.PART.MAIN | lv.STATE.DEFAULT)
+screen.set_style_bg_opa(255, lv.PART.MAIN | lv.STATE.DEFAULT)
+label = lv.label(screen)
+label.set_text(f"MicroPython{os.uname()[2]}")
+label.set_style_text_color(lv.color_hex(0xffffff), lv.PART.MAIN)
+label.align(lv.ALIGN.CENTER, 0, 0)
 
 def show_lottie(obj, file_path, w, h, x, y):
     """
@@ -46,30 +50,35 @@ def show_lottie(obj, file_path, w, h, x, y):
     :return: lottie 动画对象
     """
     try:
+        
         with open(file_path, 'r') as file:
             json_data = file.read()
         json_bytes = json_data.encode('utf-8')
-
+        
+        #json_bytes = lv_example_rlottie_approve
         lottie = lv.rlottie_create_from_raw(obj, w, h, json_bytes)
         lottie.align(lv.ALIGN.CENTER, x, y)
-        print(lottie)
         return lottie
         
     except Exception as e:
         print(f"Error creating lottie animation: {e}")
         return None
-print(wrapper.get_dma_size())
 
-
-
-#show_lottie(screen, "/rlottie/loading.json",150,150,0,0)
-
-print(wrapper.get_dma_size())
 
 print("Memory before:", gc.mem_free())
 
+def test_ble():
+    print(wrapper.get_dma_size())
+    ble_scanner = BleScan()
+    ble_scanner.start_scan(callback=None, duration_ms=5000, completion_callback=None)
+    print(wrapper.get_dma_size())
+    time.sleep(10)
+    
+    ble_scanner.destroy()
+    print(wrapper.get_dma_size())
 
 def test_espnow():
+    print(wrapper.get_dma_size())
     #init esp now broadcast
     def esp_now_recv(mac, msg):
         pass
@@ -88,10 +97,40 @@ def test_espnow():
     gc.collect()
     print("Memory after:", gc.mem_free())
 
-while True:
-    test_espnow()
+def test_all():
+    print("start:", wrapper.get_dma_size())
+    ble_scanner = BleScan()
+    ble_scanner.start_scan(callback=None, duration_ms=5000, completion_callback=None)
+    
+    print("after ble start:", wrapper.get_dma_size())
+    def esp_now_recv(mac, msg):
+        pass
+    en = esp_now.EspN(esp_now_recv)
+    en.Run()
+    bcast = b'\xff\xff\xff\xff\xff\xff'
+    en.AddPeer(bcast)
+    print("after ble and espnow start:", wrapper.get_dma_size())
+    
     time.sleep(5)
-    #lv.timer_handler_run_in_period(5)
+    ble_scanner.destroy()
+    print("after ble destroy:", wrapper.get_dma_size())
+    en.destroy()
+    print("after espnow destroy:",wrapper.get_dma_size())
+    
+#test_ble()
+#test_espnow()
+    
+print(wrapper.get_dma_size())
+#show_lottie(screen, "/rlottie/loading.json",150,150,0,0)
+print(wrapper.get_dma_size())
+
+while True:
+    print("while test")
+    lv.timer_handler_run_in_period(5)
+    #test_ble()
+    test_all()
+    time.sleep(5)
+
 
 
 

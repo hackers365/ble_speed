@@ -134,9 +134,10 @@ class PageManager:
                 print(f"Moving at x={self.current_x}")
                 
         elif code == lv.EVENT.RELEASED:
+            print("released")
             if self.touch_start_x is not None and self.current_x is not None:
                 diff_x = self.current_x - self.touch_start_x
-                threshold = 40
+                threshold = 30
                 print(f"Release with diff_x={diff_x}")
                 
                 if abs(diff_x) > threshold:
@@ -185,8 +186,8 @@ class Screen():
         return self.config
         
     def init_screen(self):
-        wrapper = lvgl_esp32.Wrapper(display, touch,use_spiram=True, buf_lines=24)
-        wrapper.init()
+        self.wrapper = lvgl_esp32.Wrapper(display, touch,use_spiram=False, buf_lines=24)
+        self.wrapper.init()
 
         display.brightness(60)
         display.swapXY(False)
@@ -228,12 +229,9 @@ class Screen():
         # 创建 FPS 更新定时器
         self.last_time = lv.tick_get()
         lv.timer_create(self.update_fps, 1000, None)
-    def on_show(self, resp):
-        current_page = self.page_manager.current_page
-        if isinstance(current_page, MainPage):
-            current_page.on_show(resp)
         
     def update_fps(self, task):
+        print(self.wrapper.get_dma_size())
         """更新 FPS 显示"""
         current_time = lv.tick_get()
         elapsed = current_time - self.last_time

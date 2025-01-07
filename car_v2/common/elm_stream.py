@@ -20,7 +20,6 @@ class ELM327Stream:
         if self.buffer.startswith(b'>'):
             self.buffer = self.buffer[1:]
         '''
-
         final_data = []
         # 尝试从缓冲区解析出每一行响应
         while b'>' in self.buffer:
@@ -39,6 +38,7 @@ class ELM327Stream:
                         if self.on_show:
                             self.on_show(parse_data)
                         final_data.append(parse_data)
+
         return final_data
 
     def _parse_response(self, response):

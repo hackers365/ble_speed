@@ -39,6 +39,8 @@ class SecondPage(BasePage):
                 btn.set_style_shadow_width(10, 0)                  # 添加阴影
                 btn.set_style_shadow_color(lv.color_hex(0x1E90FF), 0)
                 btn.set_style_shadow_opa(lv.OPA._40, 0)
+                btn.add_flag(lv.obj.FLAG.EVENT_BUBBLE)  # 允许手势冒泡
+                btn.add_flag(lv.obj.FLAG.GESTURE_BUBBLE)  # 允许手势冒泡
                 
                 # 创建按钮文本标签
                 label = lv.label(btn)
@@ -47,9 +49,10 @@ class SecondPage(BasePage):
                 label.set_style_text_font(lv.font_montserrat_20, 0)
                 label.set_style_text_color(lv.color_hex(0xFFFFFF), 0)
                 
+
                 # 添加点击事件
                 btn.add_event_cb(item["callback"], lv.EVENT.CLICKED, None)
-                
+
                 # 将按钮添加到元素列表中
                 self.elements.append(btn)
                 
@@ -58,28 +61,9 @@ class SecondPage(BasePage):
             
     def on_baby_click(self, event):
         """Baby 按钮点击回调"""
-        try:
-            # 隐藏所有现有元素
-            for element in self.elements:
-                element.set_style_opa(0, 0)  # 设置透明度为0来隐藏元素
-            
+        try:            
             # 显示 lottie 动画
-            lottie = self.show_lottie("/rlottie/loading.json", 150, 150, 0, 0)
-            self.elements.append(lottie)  # 将动画添加到元素列表中
-            
-            # 创建定时器来恢复按钮颜色和删除动画
-            def cleanup(timer):
-                # 恢复所有元素的显示
-                for element in self.elements:
-                    if element != lottie:  # 不恢复动画的显示
-                        element.set_style_opa(255, 0)  # 设置透明度为255来显示元素
-                
-                if lottie in self.elements:
-                    lottie.delete()
-                    self.elements.remove(lottie)
-                timer.delete()
-            
-            timer = lv.timer_create(cleanup, 3000, None)  # 3秒后清理
+            lottie = self.show_lottie(self.screen,"/rlottie/loading.json", 150, 150, 0, 0, 3000)
             
             print("Baby button clicked")
             

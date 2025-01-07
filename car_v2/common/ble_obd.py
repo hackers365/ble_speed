@@ -41,23 +41,32 @@ _ADV_DIRECT_IND = const(0x01)
 _ADV_SCAN_IND = const(0x02)
 _ADV_NONCONN_IND = const(0x03)
 
+'''
 _UART_SERVICE_UUID = bluetooth.UUID("6E400001-B5A3-F393-E0A9-E50E24DCCA9E")
 _UART_RX_CHAR_UUID = bluetooth.UUID("6E400002-B5A3-F393-E0A9-E50E24DCCA9E")
 _UART_TX_CHAR_UUID = bluetooth.UUID("6E400003-B5A3-F393-E0A9-E50E24DCCA9E")
 target_addr = "C8:C9:A3:D5:F1:26"
 
-
-'''
 _UART_SERVICE_UUID = bluetooth.UUID(0x18f0)
 _UART_RX_CHAR_UUID = bluetooth.UUID(0x2af1)
 _UART_TX_CHAR_UUID = bluetooth.UUID(0x2af0)
 target_addr = "C0:48:46:E7:F0:B8"
 '''
+_UART_SERVICE_UUID = bluetooth.UUID("test")
+_UART_RX_CHAR_UUID = bluetooth.UUID("test")
+_UART_TX_CHAR_UUID = bluetooth.UUID("test")
+target_addr = "test"
+
+
 class BLESimpleCentral:
-    def __init__(self, ble):
+    def __init__(self, ble, service_uuid, rx_char_uuid, tx_char_uuid, target_addr):
         self._ble = ble
         self._ble.active(True)
         self._ble.irq(self._irq)
+        self._service_uuid = service_uuid
+        self._rx_char_uuid = rx_char_uuid
+        self._tx_char_uuid = tx_char_uuid
+        self._target_addr = target_addr
 
         self._reset()
 
@@ -88,17 +97,11 @@ class BLESimpleCentral:
             addr_type, addr, adv_type, rssi, adv_data = data
             addr_str = ":".join(["{:02X}".format(b) for b in addr])
             print(addr_str)
-            if addr_str == target_addr:
+            if addr_str == self._target_addr:
                 print(addr_str)
                 print(decode_services(adv_data))
-            #if adv_type in (_ADV_IND, _ADV_DIRECT_IND) and _UART_SERVICE_UUID in decode_services(
-            #    adv_data
-            #):
-                # Found a potential device, remember it and stop scanning.
                 self._addr_type = addr_type
-                self._addr = bytes(
-                    addr
-                )  # Note: addr buffer is owned by caller so need to copy it.
+                self._addr = bytes(addr)
                 self._name = decode_name(adv_data) or "?"
                 self._ble.gap_scan(None)
 
@@ -132,7 +135,7 @@ class BLESimpleCentral:
             # Connected device returned a service.
             conn_handle, start_handle, end_handle, uuid = data
             print("service", data)
-            if conn_handle == self._conn_handle and uuid == _UART_SERVICE_UUID:
+            if conn_handle == self._conn_handle and uuid == self._service_uuid:
                 self._start_handle, self._end_handle = start_handle, end_handle
 
         elif event == _IRQ_GATTC_SERVICE_DONE:
@@ -147,9 +150,9 @@ class BLESimpleCentral:
         elif event == _IRQ_GATTC_CHARACTERISTIC_RESULT:
             # Connected device returned a characteristic.
             conn_handle, def_handle, value_handle, properties, uuid = data
-            if conn_handle == self._conn_handle and uuid == _UART_RX_CHAR_UUID:
-                self._rx_handle = value_handle
-            if conn_handle == self._conn_handle and uuid == _UART_TX_CHAR_UUID:
+            if conn_handle == self._conn_handle and uuid == self._rx_char_uuid:
+               self._rx_handle = value_handle
+            if conn_handle == self._conn_handle and uuid == self._tx_char_uuid:
                 self._tx_handle = value_handle
 
         elif event == _IRQ_GATTC_CHARACTERISTIC_DONE:
@@ -216,15 +219,15 @@ class BLESimpleCentral:
 
 
 class BleObd:
-    def __init__(self, on_value=None):
+    def __init__(self, on_value=None, service_uuid=_UART_SERVICE_UUID, rx_char_uuid=_UART_RX_CHAR_UUID, tx_char_uuid=_UART_TX_CHAR_UUID, target_addr=target_addr):
         self.ble = bluetooth.BLE()
-        self.central = BLESimpleCentral(self.ble)
+        self.central = BLESimpleCentral(self.ble, service_uuid, rx_char_uuid, tx_char_uuid, target_addr)
         self.on_value = on_value
         self.not_found = False
         self.connect_status = 0      #-1: 连接失败 0: 初始化 1:连接中 2:连接成功
     def run(self):
         if self.connect_status >= 1:
-            return
+            return True
         try:
             self.connect_status = 1
             self.not_found = False
@@ -238,7 +241,7 @@ class BleObd:
                 time.sleep_ms(100)
                 if self.not_found:
                     self.connect_status = -1
-                    return
+                    return False
                 if max_wait_count <= 0:
                     self.connect_status = -1
                     break
@@ -248,6 +251,7 @@ class BleObd:
 
             print("Connected")
             self.connect_status = 2
+            return True
         except:
             self.connect_status = -1
             return False
@@ -255,7 +259,6 @@ class BleObd:
         ret = self.central.write(v, False)
         #print(ret)
         #print(self.connect_status)
-
         if not ret and self.connect_status == 2:
             self.connect_status = -1
         return ret
@@ -282,6 +285,7 @@ class BleObd:
             self.central = None
             self.ble.active(False)
             self.ble = None
+            print("ble destroy")
         except Exception as e:
             print(f"Destroy error: {e}")
 
@@ -429,9 +433,9 @@ class BleScan:
                 conn_handle, def_handle, value_handle, properties, uuid = data
                 if conn_handle == self._conn_handle:
                     if properties & 0x10:  # notify 属性
-                        self._tx_char = uuid
+                        self._tx_char = str(uuid)
                     elif properties & 0x08:  # write 属性
-                        self._rx_char = uuid
+                        self._rx_char = str(uuid)
                         
             elif event == _IRQ_GATTC_CHARACTERISTIC_DONE:
                 if self._tx_char and self._rx_char:
@@ -588,6 +592,23 @@ def demo(scr):
 
 
 if __name__ == "__main__":
+    # Example with default values
     bo = BleObd()
     bo.run()
+
+    # Example with custom values
+    '''
+    custom_service_uuid = bluetooth.UUID(0x18f0)
+    custom_rx_char_uuid = bluetooth.UUID(0x2af1)
+    custom_tx_char_uuid = bluetooth.UUID(0x2af0)
+    custom_target_addr = "C0:48:46:E7:F0:B8"
+    
+    bo = BleObd(
+        service_uuid=custom_service_uuid,
+        rx_char_uuid=custom_rx_char_uuid,
+        tx_char_uuid=custom_tx_char_uuid,
+        target_addr=custom_target_addr
+    )
+    bo.run()
+    '''
 
