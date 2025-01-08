@@ -1,6 +1,7 @@
 import lvgl as lv
 from .base_page import BasePage
 from .loading_popup import LoadingPopup
+from .ble_mode_page import BleModePopup
 
 class SecondPage(BasePage):
     def __init__(self, baseScreen):
@@ -14,8 +15,8 @@ class SecondPage(BasePage):
             
             # 创建菜单项列表
             menu_items = [
-                {"text": "Baby", "callback": self.on_baby_click},
-                {"text": "Loading", "callback": self.on_loading_click}
+                {"text": "RunMode", "callback": self.on_baby_click},
+                {"text": "ScanBle", "callback": self.on_loading_click}
             ]
             
             # 计算按钮的大小和位置
@@ -61,12 +62,11 @@ class SecondPage(BasePage):
             
     def on_baby_click(self, event):
         """Baby 按钮点击回调"""
-        try:            
-            # 显示 lottie 动画
-            lottie = self.show_lottie(self.screen,"/rlottie/loading.json", 150, 150, 0, 0, 3000)
-            
-            print("Baby button clicked")
-            
+        try:
+            # 创建蓝牙模式设置页面
+            ble_mode_popup = BleModePopup(self.baseScreen)
+            # 使用 PageManager 压入功能页面
+            self.baseScreen.page_manager.push_popup(ble_mode_popup)
         except Exception as e:
             print(f"Error in baby click handler: {e}")
             

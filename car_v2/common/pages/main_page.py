@@ -27,6 +27,8 @@ class MainPage(BasePage):
     def init(self):
         """初始化页面"""
         self._running = True  # 添加运行状态标志
+        self.run_mode = self.config.get_run_mode()
+        print("run_mode:", self.run_mode)
         # 初始化UI组件
         self.genColorWheel()
         self.genSpeedNum()
@@ -44,8 +46,17 @@ class MainPage(BasePage):
         # 移除点击事件
         #self.screen.remove_event_cb(self.on_screen_click)
         self.arc.remove_event_cb(self.on_screen_click)
+    def is_master(self):
+        return self.run_mode == 'master'
     def init_components(self):
-        """初始化数据管理和蓝牙组件"""
+        """初始化组件"""
+        self.init_common_components()
+        if self.is_master():
+            self.init_master_components()
+        else:
+            self.init_slave_components()
+    def init_common_components(self):
+        """初始化通用组件"""
         # 初始化数据管理器
         self.data_manager = DataManager()
         # 初始化数据解析器
@@ -53,15 +64,14 @@ class MainPage(BasePage):
         # 初始化指令管理器
         self.pidCmd = cmd.Cmd()
         self.get_dma_size()
-
-        
+    
+    def init_master_components(self):
         # 初始化 ESP-NOW
         def esp_now_recv(mac, msg):
             pass  # 主机模式不需要处理接收
         self.en = esp_now.EspN(esp_now_recv)
         self.en.Run()
         self.en.AddPeer(self.bcast)
-        
 
         # 初始化蓝牙
         def on_value(v):
@@ -84,7 +94,16 @@ class MainPage(BasePage):
             })
         print(ble_params)
         self.bo = BleObd(**ble_params)
-    
+
+    def init_slave_components(self):
+        """初始化slave组件"""
+        def esp_now_recv(mac, msg):
+            self.data_manager.put_pre_parse_data(msg)
+            self.data_manager.put_broadcast_data(msg)
+        self.slave_en = esp_now.EspN(esp_now_recv)
+        self.slave_en.Run()
+        self.slave_en.AddPeer(self.bcast)
+
     def genColorWheel(self):
         """生成圆环UI"""
         self.arc = lv.arc(self.screen)
@@ -192,7 +211,15 @@ class MainPage(BasePage):
                 print('collect_data error:', e)
             await asyncio.sleep_ms(500)  # 主循环检查点
         print("collect data end")
-
+    async def esp_now_recv(self):
+        """esp_now接收数据"""
+        while self._running:
+            try:
+                self.slave_en.Recv()
+            except Exception as e:
+                print('esp_now_recv error:', e)
+            await asyncio.sleep_ms(10)
+        print("esp_now_recv end")
     async def broadcast_data(self):
         """广播数据任务"""
         while self._running:
@@ -279,13 +306,30 @@ class MainPage(BasePage):
             print('on_show error:', e)
     def start_tasks(self):
         """启动所有异步任务"""
+        run_tasks = []
+        if self.is_master():
+            run_tasks = [
+                self.collect_data,
+                self.parse_data,
+                self.display_data,
+                self.broadcast_data,
+            ]
+        else:
+            run_tasks = [
+                self.esp_now_recv,
+                self.parse_data,
+                self.display_data,
+            ]
+        for task_func in run_tasks:
+            self.tasks.append(asyncio.create_task(task_func()))
+        '''
         self.tasks = [
-            asyncio.create_task(self.collect_data()),
+            #asyncio.create_task(self.collect_data()),
             asyncio.create_task(self.parse_data()),
             asyncio.create_task(self.display_data()),
             asyncio.create_task(self.broadcast_data()),
         ]
-
+        '''
     async def _cancel_tasks(self):
         """取消所有任务并等待它们完成"""
         if not self.tasks:
@@ -333,6 +377,9 @@ class MainPage(BasePage):
         if self.en:
             self.en.destroy()
             self.en = None
+        if self.slave_en:
+            self.slave_en.destroy()
+            self.slave_en = None
         self.deinit_event()
 
         # 调用父类的 destroy

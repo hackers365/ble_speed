@@ -13,6 +13,7 @@ class BasePage:
         
     def destroy(self):
         """销毁页面，清理资源"""
+        print(self.elements)
         for element in self.elements:
             element.delete()
         self.elements.clear()
@@ -88,9 +89,9 @@ class BasePage:
         
         mbox.center()
         def complete(t):
+            mbox.delete()
             if user_callback:
                 user_callback()
-            mbox.delete()
         # 设置定时器自动关闭
         timer = lv.timer_create(complete, timeout, None)
         timer.set_repeat_count(1)

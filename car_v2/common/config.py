@@ -81,3 +81,16 @@ class Config:
             self.set('bluetooth', 'device_name', device_name)
         if device_addr:
             self.set('bluetooth', 'device_addr', device_addr) 
+        
+    def get_run_mode(self):
+        """获取运行模式"""
+        return self.get('run_mode', 'mode', 'master')
+        
+    def set_run_mode(self, mode):
+        """设置运行模式
+        :param mode: 'master' 或 'slave'
+        """
+        if mode not in ['master', 'slave']:
+            raise ValueError("Mode must be 'master' or 'slave'")
+        self.set('run_mode', 'mode', mode)
+        self.save() 

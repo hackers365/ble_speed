@@ -134,7 +134,7 @@ class LoadingPopup(BasePage):
         print("after BleScan")
         self.found_devices = []  # 清空设备列表
         self.ble_scanner.start_scan(callback=self.on_devices_found, duration_ms=5000, completion_callback=self.on_scan_complete)
-    def on_destroy(self):
+    def destroy(self):
         """页面销毁时清理"""
         if self.ble_scanner:
             self.ble_scanner.stop_scan()
@@ -142,4 +142,4 @@ class LoadingPopup(BasePage):
         if self.lottie:
             self.lottie.delete()
             self.lottie = None
-        super().on_destroy() 
+        super().destroy() 
