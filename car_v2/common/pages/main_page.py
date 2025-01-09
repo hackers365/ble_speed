@@ -1,7 +1,7 @@
 import lvgl as lv
 import uasyncio as asyncio
 from collections import deque
-from ble_obd import BleObd
+from common.aioble_obd import AioBleObd
 import elm_stream
 import cmd
 import time
@@ -20,6 +20,7 @@ class MainPage(BasePage):
         self.es = None
         self.en = None
         self.pidCmd = None
+        self.slave_en = None
         self.tasks = []
         self.bcast = b'\xff\xff\xff\xff\xff\xff'  # 广播地址
         self.config = baseScreen.get_config()  # Get config from base screen
@@ -74,26 +75,21 @@ class MainPage(BasePage):
         self.en.AddPeer(self.bcast)
 
         # 初始化蓝牙
-        def on_value(v):
-            if self.data_manager:
-                self.data_manager.put_pre_parse_data(v)
-                self.data_manager.put_broadcast_data(v)
-
+        self.bo = AioBleObd()
+        
         # 从配置文件读取蓝牙参数
         ble_config = self.config.get_bluetooth_config()
-        ble_params = {'on_value': on_value}
-
+        
         # 检查必要的蓝牙参数是否同时存在且有值
         if (ble_config.get('uuid') and ble_config.get('rx_char') and 
             ble_config.get('tx_char') and ble_config.get('device_addr')):
-            ble_params.update({
-                'service_uuid': bluetooth.UUID(ble_config['uuid'].strip("UUID('").strip("')")),
-                'rx_char_uuid': bluetooth.UUID(ble_config['rx_char'].strip("UUID('").strip("')")),
-                'tx_char_uuid': bluetooth.UUID(ble_config['tx_char'].strip("UUID('").strip("')")),
-                'target_addr': ble_config['device_addr']
-            })
-        print(ble_params)
-        self.bo = BleObd(**ble_params)
+            self.ble_params = {
+                'service_uuid': ble_config['uuid'],
+                'tx_uuid': ble_config['tx_char'],
+                'rx_uuid': ble_config['rx_char'],
+                'addr': ble_config['device_addr']
+            }
+            print("BLE params:", self.ble_params)
 
     def init_slave_components(self):
         """初始化slave组件"""
@@ -194,22 +190,57 @@ class MainPage(BasePage):
 
     async def collect_data(self):
         """收集数据的协程"""
-        while self._running:  # 使用标志控制循环
+        while self._running:
             try:
-                r = self.bo.run()
-                if not r:
-                    await asyncio.sleep_ms(1000)
+                # 连接设备
+                if not self.bo.is_connected:
+                    # 清空显示内容
+                    self.speed_label.set_text("")
+                    self.title_label.set_text("")
+                    self.unit_label.set_text("")
+                    
+                    # 显示 loading 动画
+                    self.loading = self.show_lottie(self.screen, "/rlottie/loading.json", 150, 150, 0, 0)
+                    
+                    success = await self.bo.connect_to_service(
+                        self.ble_params['addr'], 
+                        self.ble_params['service_uuid'], 
+                        self.ble_params['tx_uuid'], 
+                        self.ble_params['rx_uuid']
+                    )
+                    
+                    # 删除 loading 动画
+                    if self.loading:
+                        self.loading.delete()
+                        
+                    # 恢复初始显示
+                    if not success:
+                        self.speed_label.set_text("0")
+                        self.title_label.set_text("Speed")
+                        self.unit_label.set_text("km/h")
+                        await asyncio.sleep_ms(3000)
+                        continue
+                
+                # 发送数据
                 for k in self.pidCmd.cmd_map:
-                    if not self._running:  # 检查点
+                    if not self._running:
                         return
-                    ret = await self.send_data(self.pidCmd.cmd_map[k]["cmd"] + b'\r\n')
-                    if ret:
-                        self.data_manager.put_pre_parse_data(ret)
-                        self.data_manager.put_broadcast_data(ret)
+                        
+                    # 发送命令
+                    if not await self.bo.send(self.pidCmd.cmd_map[k]["cmd"]):
+                        continue
+                        
                     await asyncio.sleep_ms(50)
+                    
             except Exception as e:
                 print('collect_data error:', e)
-            await asyncio.sleep_ms(500)  # 主循环检查点
+                #检查self.loading是否存在，存在则删除
+                if self.loading:
+                    self.loading.delete()
+                await self.bo.disconnect()
+
+            await asyncio.sleep_ms(500)
+            
         print("collect data end")
     async def esp_now_recv(self):
         """esp_now接收数据"""
@@ -310,6 +341,7 @@ class MainPage(BasePage):
         if self.is_master():
             run_tasks = [
                 self.collect_data,
+                self.recv_task,  # 添加接收任务
                 self.parse_data,
                 self.display_data,
                 self.broadcast_data,
@@ -354,17 +386,14 @@ class MainPage(BasePage):
 
     def destroy(self):
         """页面销毁时清理资源"""
-        #try:
-            # 设置停止标志
         self._running = False
         
-        # 创建并运行取消任务
-        #asyncio.run(self._cancel_tasks())
         asyncio.gather(*self.tasks)
         print("after gather")
+        
         # 清理蓝牙连接
         if self.bo:
-            self.bo.destroy()
+            self.bo.close()  # 使用新的 close 方法
             self.bo = None
             
         # 最后清理对象引用
@@ -384,10 +413,7 @@ class MainPage(BasePage):
 
         # 调用父类的 destroy
         super().destroy()
-        '''
-        except Exception as e:
-            print(f"Destroy error: {e}")
-        '''
+
     def setTitleText(self, text):
         """设置标题文本"""
         try:
@@ -426,6 +452,27 @@ class MainPage(BasePage):
             
         except Exception as e:
             print('on_screen_click error:', e)
+
+    async def recv_task(self):
+        """接收数据的协程"""
+        while self._running:
+            try:
+                if not self.bo.is_connected:
+                    await asyncio.sleep_ms(100)
+                    continue
+                    
+                # 接收数据
+                data = await self.bo.receive()
+                if data is not None:
+                    print("Received:", data)
+                    self.data_manager.put_pre_parse_data(data)
+                    self.data_manager.put_broadcast_data(data)
+                    
+            except Exception as e:
+                print(f"Receive error: {e}")
+                await asyncio.sleep_ms(100)
+                
+        print("recv task end")
 
 class DataManager:
     """数据管理器类"""

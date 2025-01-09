@@ -283,11 +283,14 @@ class BleObd:
         try:
             self.central.disconnect()
             self.central = None
-            self.ble.active(False)
-            self.ble = None
-            print("ble destroy")
+            if self.ble and self.ble.active():  # 检查蓝牙是否仍然活跃
+                self.ble.active(False)
+                print("after ble.active(False)")
+            self._reset()
         except Exception as e:
-            print(f"Destroy error: {e}")
+            print(f"销毁BLE时发生错误: {e}")
+        finally:
+            self.ble = None  # 确保释放蓝牙对象
 
 
 class BleScan:
@@ -521,18 +524,25 @@ class BleScan:
     def stop_scan(self):
         """停止扫描"""
         try:
-            self.ble.gap_scan(None)
-            return True
+            if self.ble and self.ble.active():  # 检查蓝牙是否仍然活跃
+                self.ble.gap_scan(None)
+                return True
         except Exception as e:
             print("停止扫描失败:", e)
-            return False
+        return False
 
     def destroy(self):
-        self.disconnect()
-        print("after disconnect")
-        self.ble.active(False)
-        print("after ble.active(False)")
-        self._reset()
+        try:
+            self.disconnect()
+            print("after disconnect")
+            if self.ble and self.ble.active():  # 检查蓝牙是否仍然活跃
+                self.ble.active(False)
+                print("after ble.active(False)")
+            self._reset()
+        except Exception as e:
+            print(f"销毁BLE时发生错误: {e}")
+        finally:
+            self.ble = None  # 确保释放蓝牙对象
 '''
 def demo(scr):
     ble = bluetooth.BLE()
