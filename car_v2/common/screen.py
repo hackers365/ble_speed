@@ -155,8 +155,9 @@ class PageManager:
                 self.current_x = None
 
 class Screen():
-    def __init__(self):
+    def __init__(self, fps_instance):
         self.config = Config()  # 初始化配置对象
+        self.fps_instance = fps_instance
         self.init_screen()
         self.init_font()
         self.init_fps()  # 添加 FPS 初始化
@@ -227,22 +228,13 @@ class Screen():
         self.fps_label.set_style_text_color(lv.color_hex(0xffffff), lv.PART.MAIN)
         
         # 创建 FPS 更新定时器
-        self.last_time = lv.tick_get()
         lv.timer_create(self.update_fps, 1000, None)
         
     def update_fps(self, task):
         print(self.wrapper.get_dma_size())
         """更新 FPS 显示"""
-        current_time = lv.tick_get()
-        elapsed = current_time - self.last_time
-        
-        if elapsed > 0:
-            fps = (self.frame_count * 1000) / elapsed
-            if fps > 30:
-                fps = 30
-            self.fps_label.set_text(f"FPS: {fps:.1f}")
-            self.frame_count = 0
-            self.last_time = current_time
+        self.fps_instance.update()
+        self.fps_label.set_text(f"FPS: {self.fps_instance.get_fps():.1f}")
 '''
 def Run():
     screen = Screen()

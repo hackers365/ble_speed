@@ -122,7 +122,6 @@ class AioBleObd:
             print("Already connecting...")
             return False
 
-        #try:
         self._connecting = True
         self._connect_task = asyncio.current_task()
 
@@ -137,7 +136,7 @@ class AioBleObd:
 
         if not device:
             print(f"Device {addr} not found")
-            self.disconnect()
+            await self.disconnect()
             return False
 
         # 连接设备
@@ -354,27 +353,20 @@ async def test():
         print("Connection failed")
 
 # 带超时的连接示例
-async def connect_with_timeout(addr, service_uuid, tx_uuid, rx_uuid, timeout=10):
-    try:
-        obd = AioBleObd()
+async def connect_with_timeout(timeout=10):
+    addr = "c8:c9:a3:d5:f1:26"
+    service_uuid = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
+    tx_uuid = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
+    rx_uuid = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
+    obd = AioBleObd()
+    while True:
+        print("connecting...")
+        print(obd._connecting)
         # 创建连接任务
-        connect_task = asyncio.create_task(
-            obd.connect_to_service(addr, service_uuid, tx_uuid, rx_uuid)
-        )
-        
-        # 等待连接完成或超时
-        if await asyncio.wait_for(connect_task, timeout):
-            print("Connected with timeout control")
+        success = await obd.connect_to_service(addr, service_uuid, tx_uuid, rx_uuid)
+        if success:
             return obd
-        return None
-    
-    except asyncio.TimeoutError:
-        print("Connection timeout")
-        await obd.cancel_connect()
-        return None
-    except asyncio.CancelledError:
-        print("Connection cancelled")
-        return None
+        await asyncio.sleep_ms(2000)
 
 # 扫描并连接示例
 async def scan_and_connect():
@@ -422,5 +414,5 @@ async def scan_and_connect():
         await asyncio.sleep_ms(3000)
 
 if __name__ == "__main__":
-    asyncio.run(scan_and_connect())
+    asyncio.run(connect_with_timeout())
 '''

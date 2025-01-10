@@ -125,7 +125,7 @@ class MainPage(BasePage):
         self.speed_label = lv.label(self.screen)
         self.elements.append(self.speed_label)
         self.speed_label.set_style_text_font(self.myfont_en_100, 0)
-        self.speed_label.set_text("0")
+        self.speed_label.set_text("")
         self.speed_label.align(lv.ALIGN.CENTER, 0, 0)
         self.speed_label.set_style_text_color(lv.color_hex(0xffffff), lv.PART.MAIN)
 
@@ -194,13 +194,15 @@ class MainPage(BasePage):
             try:
                 # 连接设备
                 if not self.bo.is_connected:
-                    # 清空显示内容
-                    self.speed_label.set_text("")
-                    self.title_label.set_text("")
-                    self.unit_label.set_text("")
+                    # 隐藏显示内容
+                    self.speed_label.add_flag(lv.obj.FLAG.HIDDEN)
+                    self.title_label.add_flag(lv.obj.FLAG.HIDDEN)
+                    self.unit_label.add_flag(lv.obj.FLAG.HIDDEN)
                     
-                    # 显示 loading 动画
-                    self.loading = self.show_lottie(self.screen, "/rlottie/loading.json", 150, 150, 0, 0)
+                    # 检查是否已经显示loading动画
+                    if not hasattr(self, 'loading') or not self.loading:
+                        # 显示 loading 动画
+                        self.loading = self.show_lottie(self.screen, "/rlottie/loading.json", 150, 150, 0, 0)
                     
                     success = await self.bo.connect_to_service(
                         self.ble_params['addr'], 
@@ -209,15 +211,17 @@ class MainPage(BasePage):
                         self.ble_params['rx_uuid']
                     )
                     
-                    # 删除 loading 动画
-                    if self.loading:
-                        self.loading.delete()
-                        
-                    # 恢复初始显示
-                    if not success:
-                        self.speed_label.set_text("0")
-                        self.title_label.set_text("Speed")
-                        self.unit_label.set_text("km/h")
+                    if success:
+                        # 连接成功才删除loading动画
+                        if hasattr(self, 'loading') and self.loading:
+                            self.loading.delete()
+                            self.loading = None
+                        # 恢复初始显示
+                        self.speed_label.remove_flag(lv.obj.FLAG.HIDDEN)
+                        self.title_label.remove_flag(lv.obj.FLAG.HIDDEN)
+                        self.unit_label.remove_flag(lv.obj.FLAG.HIDDEN)
+                    else:
+                        # 连接失败，保持loading动画显示
                         await asyncio.sleep_ms(3000)
                         continue
                 
@@ -234,12 +238,14 @@ class MainPage(BasePage):
                     
             except Exception as e:
                 print('collect_data error:', e)
-                #检查self.loading是否存在，存在则删除
-                if self.loading:
-                    self.loading.delete()
                 await self.bo.disconnect()
 
             await asyncio.sleep_ms(500)
+            
+        # 确保在退出时清理loading动画
+        if hasattr(self, 'loading') and self.loading:
+            self.loading.delete()
+            self.loading = None
             
         print("collect data end")
     async def esp_now_recv(self):
@@ -470,7 +476,7 @@ class MainPage(BasePage):
                     
             except Exception as e:
                 print(f"Receive error: {e}")
-                await asyncio.sleep_ms(100)
+                await asyncio.sleep_ms(1000)
                 
         print("recv task end")
 
