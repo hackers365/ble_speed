@@ -25,6 +25,7 @@ class MainPage(BasePage):
         self.bcast = b'\xff\xff\xff\xff\xff\xff'  # 广播地址
         self.config = baseScreen.get_config()  # Get config from base screen
         self.skip_counter = 0  # 添加skip命令计数器
+        self.ble_params = None
 
     def init(self):
         """初始化页面"""
@@ -233,13 +234,14 @@ class MainPage(BasePage):
                     if not hasattr(self, 'loading') or not self.loading:
                         # 显示 loading 动画
                         self.loading = self.show_lottie(self.screen, "/rlottie/loading.json", 150, 150, 0, 0)
-                    
-                    success = await self.bo.connect_to_service(
-                        self.ble_params['addr'], 
-                        self.ble_params['service_uuid'], 
-                        self.ble_params['tx_uuid'], 
-                        self.ble_params['rx_uuid']
-                    )
+                    success = False
+                    if self.ble_params:
+                        success = await self.bo.connect_to_service(
+                            self.ble_params['addr'], 
+                            self.ble_params['service_uuid'], 
+                            self.ble_params['tx_uuid'], 
+                            self.ble_params['rx_uuid']
+                        )
                     
                     if success:
                         # 连接成功才删除loading动画
