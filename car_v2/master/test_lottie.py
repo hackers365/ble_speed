@@ -14,9 +14,8 @@ import esp_now
 import gc
 import esp_now
 from ble_obd import BleScan
-from lv_example_rlottie_approve import lv_example_rlottie_approve
 
-wrapper = lvgl_esp32.Wrapper(display,touch,use_spiram=True, buf_lines=96)
+wrapper = lvgl_esp32.Wrapper(display,touch,use_spiram=False, buf_lines=24)
 #wrapper = lvgl_esp32.Wrapper(display,touch,use_spiram=True, buf_lines=48)
 wrapper.init()
 os.listdir('/sd')
@@ -119,17 +118,21 @@ def test_all():
     
 #test_ble()
 #test_espnow()
-    
-print(wrapper.get_dma_size())
-#show_lottie(screen, "/rlottie/loading.json",150,150,0,0)
-print(wrapper.get_dma_size())
-
+def test_lottie():
+    print(wrapper.get_dma_size())
+    lottie = show_lottie(screen, "/rlottie/loading.json",200,200,0,0)
+    print(wrapper.get_dma_size())
+    lottie.delete()
+    print(wrapper.get_dma_size())
+    del(lottie)
+    time.sleep(2)
 while True:
-    print("while test")
+    #print("while test")
     lv.timer_handler_run_in_period(5)
+    test_lottie()
     #test_ble()
-    test_all()
-    time.sleep(5)
+    #test_all()
+    #time.sleep(0.005)
 
 
 

@@ -24,6 +24,7 @@ class MainPage(BasePage):
         self.tasks = []
         self.bcast = b'\xff\xff\xff\xff\xff\xff'  # 广播地址
         self.config = baseScreen.get_config()  # Get config from base screen
+        self.skip_counter = 0  # 添加skip命令计数器
 
     def init(self):
         """初始化页面"""
@@ -35,6 +36,7 @@ class MainPage(BasePage):
         self.genSpeedNum()
         self.genTitle()
         self.genUnit()
+        self.genImage()
         # 初始化业务组件
         self.init_components()
         self.init_event()
@@ -83,10 +85,17 @@ class MainPage(BasePage):
         # 检查必要的蓝牙参数是否同时存在且有值
         if (ble_config.get('uuid') and ble_config.get('rx_char') and 
             ble_config.get('tx_char') and ble_config.get('device_addr')):
+            
+            def convert_uuid(uuid_val):
+                if isinstance(uuid_val, str) and uuid_val.startswith('0x'):
+                    # 如果是0x开头的字符串，转换为整数
+                    return int(uuid_val, 16)
+                return str(uuid_val)  # 其他情况转为字符串
+            
             self.ble_params = {
-                'service_uuid': ble_config['uuid'],
-                'tx_uuid': ble_config['tx_char'],
-                'rx_uuid': ble_config['rx_char'],
+                'service_uuid': convert_uuid(ble_config['uuid']),
+                'tx_uuid': convert_uuid(ble_config['tx_char']),
+                'rx_uuid': convert_uuid(ble_config['rx_char']),
                 'addr': ble_config['device_addr']
             }
             print("BLE params:", self.ble_params)
@@ -99,6 +108,27 @@ class MainPage(BasePage):
         self.slave_en = esp_now.EspN(esp_now_recv)
         self.slave_en.Run()
         self.slave_en.AddPeer(self.bcast)
+    def genImage(self):
+        """根据配置生成图片"""
+        # 检查配置是否允许显示图片
+        if not self.config.get_show_image():
+            return
+            
+        with open('%s/car.png' % self.script_path, 'rb') as f:
+            png_data = f.read()
+        
+        png_image_dsc = lv.image_dsc_t({
+            'data_size': len(png_data),
+            'data': png_data 
+        })
+
+        # Create an image using the decoder
+        image1 = lv.image(self.screen)
+        image1.set_src(png_image_dsc)
+        image1.set_pos(100,240)
+        
+        # 将图片对象添加到elements列表中以便清理
+        self.elements.append(image1)
 
     def genColorWheel(self):
         """生成圆环UI"""
@@ -226,21 +256,31 @@ class MainPage(BasePage):
                         continue
                 
                 # 发送数据
+                '''
                 for k in self.pidCmd.cmd_map:
                     if not self._running:
                         return
-                        
-                    # 发送命令
-                    if not await self.bo.send(self.pidCmd.cmd_map[k]["cmd"]):
-                        continue
-                        
-                    await asyncio.sleep_ms(50)
-                    
+                '''     
+                # 发送命令
+                if not await self.bo.send(self.pidCmd.multi_cmd_bytes):
+                    continue
+                
+                # 使用独立计数器控制skip_multi命令发送
+                self.skip_counter += 1
+                if self.skip_counter >= 10:
+                    for k in self.pidCmd.cmd_map:
+                        if "skip_multi" in self.pidCmd.cmd_map[k]:
+                            if not await self.bo.send(self.pidCmd.cmd_map[k]["cmd"]):
+                                continue
+                            await asyncio.sleep_ms(500)
+                    self.skip_counter = 0  # 重置计数器
+
+                
             except Exception as e:
                 print('collect_data error:', e)
                 await self.bo.disconnect()
 
-            await asyncio.sleep_ms(500)
+            await asyncio.sleep_ms(200)
             
         # 确保在退出时清理loading动画
         if hasattr(self, 'loading') and self.loading:

@@ -38,7 +38,7 @@ class AioBleObd:
                 addr = device.addr_hex()
                 name = result.name() if result.name() else "Unknown"
                 rssi = result.rssi
-                
+
                 # 检查是否已存在该设备
                 exists = False
                 for dev, dev_addr, _, _ in self.devices:
@@ -85,7 +85,7 @@ class AioBleObd:
                         if char.properties & bluetooth.FLAG_NOTIFY:
                             tx_char = char
                             tx_uuid = str(char.uuid).replace('UUID(','').replace(')','').replace("'","")
-                        elif (char.properties & bluetooth.FLAG_WRITE) and not (char.properties & bluetooth.FLAG_WRITE_NO_RESPONSE):
+                        elif (char.properties & bluetooth.FLAG_WRITE) or (char.properties & bluetooth.FLAG_WRITE_NO_RESPONSE):
                             rx_char = char
                             rx_uuid = str(char.uuid).replace('UUID(','').replace(')','').replace("'","")
                             
@@ -291,7 +291,7 @@ class AioBleObd:
                 await self.disconnect()
             return None
 
-'''
+
 async def scan():
     obd = AioBleObd()
     devices = await obd.scan()
@@ -414,5 +414,4 @@ async def scan_and_connect():
         await asyncio.sleep_ms(3000)
 
 if __name__ == "__main__":
-    asyncio.run(connect_with_timeout())
-'''
+    asyncio.run(scan())
