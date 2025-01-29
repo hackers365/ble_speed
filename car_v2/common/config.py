@@ -94,3 +94,13 @@ class Config:
             raise ValueError("Mode must be 'master' or 'slave'")
         self.set('run_mode', 'mode', mode)
         self.save() 
+        
+    def get_show_image(self):
+        """获取是否显示图片的配置"""
+        value = self.get('display', 'show_image', 'true')
+        return value.lower() == 'true'
+        
+    def set_show_image(self, show_image):
+        """设置是否显示图片"""
+        self.set('display', 'show_image', str(show_image))
+        self.save() 

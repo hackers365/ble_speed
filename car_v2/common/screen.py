@@ -169,10 +169,14 @@ class Screen():
         self.screen.add_flag(lv.obj.FLAG.CLICKABLE)
         self.screen.add_flag(lv.obj.FLAG.GESTURE_BUBBLE)  # 允许手势冒泡
                 
-        # 注册手势事件
-        self.screen.add_event_cb(self.page_manager.handle_touch, lv.EVENT.PRESSED, None)
-        self.screen.add_event_cb(self.page_manager.handle_touch, lv.EVENT.PRESSING, None)
-        self.screen.add_event_cb(self.page_manager.handle_touch, lv.EVENT.RELEASED, None)
+        # 修改回调函数的注册方式
+        def touch_handler(e):
+            self.page_manager.handle_touch(e)
+        
+        # 使用新的回调函数注册方式
+        self.screen.add_event_cb(touch_handler, lv.EVENT.PRESSED, None)
+        self.screen.add_event_cb(touch_handler, lv.EVENT.PRESSING, None)
+        self.screen.add_event_cb(touch_handler, lv.EVENT.RELEASED, None)
         
         # 添加一级页面
         main_page = MainPage(self)
@@ -213,7 +217,7 @@ class Screen():
         fs_drv = lv.fs_drv_t()
         fs_driver.fs_register(fs_drv, 'S')
 
-        self.myfont_en_100 = lv.binfont_create("S:%s/font/speed_num_consolas_100.bin" % script_path)
+        self.myfont_en_100 = lv.binfont_create("S:%s/font/speed_num_consola_80.bin" % script_path)
 
     def init_fps(self):
         """初始化 FPS 显示相关内容"""
