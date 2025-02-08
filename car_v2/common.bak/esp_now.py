@@ -25,10 +25,6 @@ class EspN:
     
     def Send(self, mac, msg, sync):
         self.e.send(mac, msg, sync)
-    
-    def destroy(self):
-        self.sta.active(False)
-        self.e.active(False)
 
 def recv(mac, msg):
      print(str(msg))

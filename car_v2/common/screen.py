@@ -1,40 +1,195 @@
-
 import usys as sys
-sys.path.append('') # See: https://github.com/micropython/micropython/issues/6419
+#sys.path.append('/common')
 
-import micropython,gc
-
+import micropython, gc
 import time
-# Initialize
-from hardware import display,touch
+import math
 
+from hardware import display, touch
 import lvgl as lv
 import lvgl_esp32
-
 import fs_driver
 
-import cmd
+from pages.main_page import MainPage
+from pages.second_page import SecondPage
+from common.config import Config
+
+class PageNode:
+    def __init__(self, page):
+        self.page = page
+        self.prev = None
+        self.next = None
+
+class PageManager:
+    def __init__(self):
+        self.head = None          # 链表头节点
+        self.current = None       # 当前一级页面节点
+        self.popup_stack = []     # 功能页面堆栈
+        self.touch_start_x = None
+        self.current_x = None
+        print("PageManager initialized")
+        
+    def add_main_page(self, page):
+        """添加一级页面到链表"""
+        new_node = PageNode(page)
+        if not self.head:
+            self.head = new_node
+            self.current = new_node
+            page.init()
+        else:
+            # 添加到链表末尾
+            current = self.head
+            while current.next:
+                current = current.next
+            current.next = new_node
+            new_node.prev = current
+    
+    def switch_main_page(self, direction):
+        """切换一级页面，支持循环切换
+        direction: 1 表示向前，-1 表示向后
+        """
+        if not self.current:
+            return False
+            
+        target_node = self.current.next if direction > 0 else self.current.prev
+        
+        # 如果没有下一个/上一个节点，则循环到链表的另一端
+        if not target_node:
+            if direction > 0:
+                # 向前滑动到尽头时，回到链表头部
+                target_node = self.head
+            else:
+                # 向后滑动到尽头时，找到链表尾部
+                target_node = self.head
+                while target_node.next:
+                    target_node = target_node.next
+        
+        # 清空功能页面堆栈
+        self.clear_popup_stack()
+        # 切换页面
+        self.current.page.destroy()
+        self.current = target_node
+        self.current.page.init()
+        return True
+    
+    def push_popup(self, page):
+        """压入功能页面"""
+        page.is_popup = True  # 标记为功能页面
+        if not self.popup_stack:
+            self.current.page.destroy()
+            self.popup_stack.append(page)
+            page.init()
+        else:
+            # 销毁当前功能页面
+            self.popup_stack[-1].destroy()
+            self.popup_stack.append(page)
+            page.init()
+        print(len(self.popup_stack))
+    
+    def pop_popup(self):
+        """弹出功能页面"""
+        if self.popup_stack:
+            print("pop_popup")
+            current_popup = self.popup_stack.pop()
+            current_popup.destroy()
+            # 如果还有功能页面，显示上一个
+            if self.popup_stack:
+                self.popup_stack[-1].init()
+            else:
+                self.current.page.init()
+            return True
+        return False
+    
+    def clear_popup_stack(self):
+        """清空功能页面堆栈"""
+        while self.popup_stack:
+            self.pop_popup()
+    
+    @property
+    def current_page(self):
+        """获取当前显示的页面"""
+        return self.popup_stack[-1] if self.popup_stack else self.current.page if self.current else None
+
+    def handle_touch(self, event):
+        code = event.get_code()
+        
+        # 如果有功能页面，不处理滑动手势
+        if self.popup_stack:
+            return
+            
+        if code == lv.EVENT.PRESSED:
+            indev = lv.indev_active()
+            if indev:
+                point = lv.point_t()
+                indev.get_point(point)
+                self.touch_start_x = point.x
+                print(f"Touch start at x={self.touch_start_x}")
+                
+        elif code == lv.EVENT.PRESSING:
+            indev = lv.indev_active()
+            if indev and self.touch_start_x is not None:
+                point = lv.point_t()
+                indev.get_point(point)
+                self.current_x = point.x
+                print(f"Moving at x={self.current_x}")
+                
+        elif code == lv.EVENT.RELEASED:
+            print("released")
+            if self.touch_start_x is not None and self.current_x is not None:
+                diff_x = self.current_x - self.touch_start_x
+                threshold = 30
+                print(f"Release with diff_x={diff_x}")
+                
+                if abs(diff_x) > threshold:
+                    if diff_x > 0:
+                        # 右滑，切换到上一个一级页面
+                        print("Right swipe: switching to previous page")
+                        self.switch_main_page(-1)
+                    else:
+                        # 左滑，切换到下一个一级页面
+                        print("Left swipe: switching to next page")
+                        self.switch_main_page(1)
+                
+                # 重置触摸状态
+                self.touch_start_x = None
+                self.current_x = None
 
 class Screen():
-    def __init__(self):
+    def __init__(self, fps_instance):
+        self.config = Config()  # 初始化配置对象
+        self.fps_instance = fps_instance
         self.init_screen()
         self.init_font()
-        self.init_cmd()
-        self.run()
-    def run(self):
-        self.genColorWheel()
-        self.genSpeedNum()
-        self.genTitle()
-        self.genUnit()
-        #self.setBreath()
-        self.setImage()
-    def init_cmd(self):
-        self.cmd = cmd.Cmd()
+        self.init_fps()  # 添加 FPS 初始化
+        
+        # 初始化页面管理器
+        self.page_manager = PageManager()
+        
+        # 添加必要的标志
+        self.screen.add_flag(lv.obj.FLAG.CLICKABLE)
+        self.screen.add_flag(lv.obj.FLAG.GESTURE_BUBBLE)  # 允许手势冒泡
+                
+        # 注册手势事件
+        self.screen.add_event_cb(self.page_manager.handle_touch, lv.EVENT.PRESSED, None)
+        self.screen.add_event_cb(self.page_manager.handle_touch, lv.EVENT.PRESSING, None)
+        self.screen.add_event_cb(self.page_manager.handle_touch, lv.EVENT.RELEASED, None)
+        
+        # 添加一级页面
+        main_page = MainPage(self)
+        second_page = SecondPage(self)
+        
+        # 将一级页面添加到链表
+        self.page_manager.add_main_page(main_page)
+        self.page_manager.add_main_page(second_page)
+            
+    def get_config(self):
+        """获取配置对象"""
+        return self.config
+        
     def init_screen(self):
-        wrapper = lvgl_esp32.Wrapper(display,touch)
-        wrapper.init()
+        self.wrapper = lvgl_esp32.Wrapper(display, touch,use_spiram=False, buf_lines=24)
+        self.wrapper.init()
 
-        # 设置显示
         display.brightness(60)
         display.swapXY(False)
         display.mirrorX(True)
@@ -44,10 +199,11 @@ class Screen():
         touch.mirrorX(True)
         touch.mirrorY(True)
 
-        # 创建屏幕和设置背景
         self.screen = lv.screen_active()
         self.screen.set_style_bg_color(lv.color_hex(0x000000), lv.PART.MAIN | lv.STATE.DEFAULT)
         self.screen.set_style_bg_opa(255, lv.PART.MAIN | lv.STATE.DEFAULT)
+
+        
     def init_font(self):
         try:
             script_path = __file__[:__file__.rfind('/')] if __file__.find('/') >= 0 else '.'
@@ -57,166 +213,42 @@ class Screen():
         fs_drv = lv.fs_drv_t()
         fs_driver.fs_register(fs_drv, 'S')
 
-        #myfont_en_150 = lv.binfont_create("S:%s/font/speed_num_consolas_150.bin" % script_path)
         self.myfont_en_100 = lv.binfont_create("S:%s/font/speed_num_consolas_100.bin" % script_path)
-    
-    def setImage(self):
-        with open('%s/car.png' % self.script_path, 'rb') as f:
-            png_data = f.read()
+
+    def init_fps(self):
+        """初始化 FPS 显示相关内容"""
+        # FPS 相关属性
+        self.last_time = 0
+        self.frame_count = 0
         
-        png_image_dsc = lv.image_dsc_t({
-            'data_size': len(png_data),
-            'data': png_data 
-        })
-
-        # Create an image using the decoder
-
-        image1 = lv.image(self.screen)
-        image1.set_src(png_image_dsc)
-        image1.set_pos(100,240)
-    def genColorWheel(self):
-        scr = self.screen
-        self.arc = lv.arc(scr)
-
-        self.arc.set_style_arc_width(12, lv.PART.MAIN) #外框宽度
-
-        self.arc.set_style_bg_opa(lv.OPA.TRANSP, lv.PART.KNOB) #删掉尾巴
-        self.arc.set_style_arc_opa(lv.OPA.TRANSP, lv.PART.INDICATOR) #隐藏上层
-
-        #设置底层颜色, 初始化黄色
-        self.setColorWheelColor(0x00a5ff)      
-
-        self.arc.set_bg_angles(0, 360)   #背景圆环最大角度
-        self.arc.set_value(100)          #值，默认0-100
-        self.arc.set_size(350,350)       #宽高
-        self.arc.center()                #中间
-
-        self.arc.add_event_cb(self.event_handler, lv.EVENT.CLICKED, None)
-    def setColorWheelColor(self, color_code):  #不是rgv, 是bgr
-        self.arc.set_style_arc_color(lv.color_hex(color_code), lv.PART.MAIN)
-    def opa_anmi_callback(self, a, v):
-        self.arc.set_style_arc_opa(v, lv.PART.MAIN)
-    def setBreath(self):
-        self.anim = lv.anim_t()
-        self.anim.init()
-        self.anim.set_var(self.arc)
-        self.anim.set_values(lv.OPA._30, lv.OPA.COVER)
+        # 创建 FPS 显示标签
+        self.fps_label = lv.label(self.screen)
+        self.fps_label.align(lv.ALIGN.CENTER, 0, 100)
+        self.fps_label.set_text('FPS: --')
+        self.fps_label.set_style_text_color(lv.color_hex(0xffffff), lv.PART.MAIN)
         
-        self.anim.set_duration(3000)
-        self.anim.set_playback_delay(100)
-        self.anim.set_playback_duration(300)
-        self.anim.set_repeat_delay(500)
-
-        # 从完全透明到完全不透明
-        #self.anim.set_time(3000)  
-        # 动画持续时间为1000ms (1秒)
-        #self.anim.set_playback_time(1000)  
-        # 回放动画，使其来回变化
-        self.anim.set_repeat_count(lv.ANIM_REPEAT_INFINITE)
-        # 无限循环
-        self.anim.set_custom_exec_cb(self.opa_anmi_callback)
-        self.anim.start()
-    def genTitle(self):
-        scr = self.screen
-        style = self.genStyle()
-        self.title_label = lv.label(scr)
-        #self.label.set_text_font(self.myfont_en_100, 0)  # set the font
-        self.title_label.align(lv.ALIGN.CENTER, 0, -100)
-        self.title_label.set_text('Title')
-        self.title_label.set_style_text_color(lv.color_hex(0xffffff), lv.PART.MAIN)
-    
-    def setTitleText(self, title):
-        self.title_label.set_text(title)
-
-    def genUnit(self):
-        scr = self.screen
-        style = self.genStyle()
-        self.unit_label = lv.label(scr)
-        #self.label.set_text_font(self.myfont_en_100, 0)  # set the font
-        self.unit_label.align(lv.ALIGN.CENTER, 110, 0)
-        self.unit_label.set_text('unit')
-        self.unit_label.set_style_text_color(lv.color_hex(0xffffff), lv.PART.MAIN)
-
-    def setUnitText(self, unit, x):
-        self.unit_label.align(lv.ALIGN.CENTER, x, 0)
-        self.unit_label.set_text(unit)
-
-    def genSpeedNum(self):
-        scr = self.screen
-        style = self.genStyle()
-        self.label = lv.label(scr)
+        # 创建 FPS 更新定时器
+        lv.timer_create(self.update_fps, 1000, None)
         
-        self.label.set_style_text_font(self.myfont_en_100, 0)  # set the font
-        self.label.align(lv.ALIGN.CENTER, -20, 0)
-        self.label.set_text('init')
-        self.label.set_style_text_color(lv.color_hex(0xffffff), lv.PART.MAIN)
-
-        #self.label.add_event_cb(event_handler, lv.EVENT.ALL, None)
-        #label.add_style(style, lv.PART.MAIN)
-    
-    def set_text(self, text):
-        #self.label.set_style_text_font(myfont_en_150, 0)  # set the font
-        self.label.set_text(text)
-    
-    def genStyle(self):
-        # 创建一个新的样式，用于设置文字大小
-        style = lv.style_t()
-        style.init()
-
-        # 设置文字大小，比如设置为20像素
-        #style.set_text_font(lv.STATE.DEFAULT, lv.font_montserrat_16)
-        style.set_text_font(lv.font_montserrat_20)
-        return style
-
-    def on_show(self, v):
-        scr = self.screen
-        config_info = self.cmd.cmd_map[self.cmd.cmd_type]
-        if "pid" in v:
-            if config_info["pid"] == v["pid"]:
-                if 'title' in config_info:
-                    self.setTitleText(config_info["title"])
-                
-                if v["pid"] == '0D':
-                    if type(v['value']) != int:
-                        print("speed is not int")
-                        return
-                    if v['value'] <= 40:
-                        self.setColorWheelColor(0x90EE90)
-                    elif v['value'] <= 60:
-                        self.setColorWheelColor(0x00D7FF)
-                    elif v['value'] <= 80:
-                        self.setColorWheelColor(0xFFBF00)
-                    elif v['value'] <= 120:
-                        self.setColorWheelColor(0x0045FF)
-                    else:
-                        self.setColorWheelColor(0x0000FF)
-                else:
-                    self.setColorWheelColor(0x00a5ff)
-                mainValue = str(v['value'])
-                if 'unit' in config_info:
-                    x = 110
-                    if len(mainValue) > 3:
-                        x = 120
-                    self.setUnitText(config_info["unit"], x)
-                else:
-                    self.setUnitText("", 110)
-                self.set_text(str(v['value']))
-
-    def event_handler(self, event):
-        code = event.get_code()
-        obj = event.get_target()
-        if code == lv.EVENT.CLICKED:
-            self.cmd.cmd_type = (self.cmd.cmd_type + 1) % len(self.cmd.cmd_map)
-
+    def update_fps(self, task):
+        print(self.wrapper.get_dma_size())
+        """更新 FPS 显示"""
+        self.fps_instance.update()
+        self.fps_label.set_text(f"FPS: {self.fps_instance.get_fps():.1f}")
+'''
 def Run():
     screen = Screen()
     resp = {"pid": '0D', 'value': 100}
-    #resp = {"pid": '0C', 'value': 1580}
-    screen.on_show(resp)
+
     while True:
+
+        current_page = screen.page_manager.current_page
+        if isinstance(current_page, MainPage):
+            current_page.on_show(resp)
         lv.timer_handler_run_in_period(5)
-        time.sleep(0.1)
+        screen.frame_count += 1  # 移到这里统计全局帧数
+        resp['value'] += 1
 
 if __name__ == '__main__':
     Run()
-
+'''
