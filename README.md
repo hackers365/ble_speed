@@ -13,3 +13,8 @@
 2. 将lvgl缓存使用 dma 还是 psram 由应用方控制
 3. 优化wifi dma内存占到由120k => 60k，ble dma内存占用由60k => 30k
    
+
+使用:
+刷入 firmware/firmware_wifi_close_psram_reduce_memory.bin 固件，将car_v2目录下的文件使用thonny上传至圆屏即可
+
+右滑可以 配置扫描蓝牙obd设备
