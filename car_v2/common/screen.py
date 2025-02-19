@@ -160,7 +160,7 @@ class Screen():
         self.fps_instance = fps_instance
         self.init_screen()
         self.init_font()
-        self.init_fps()  # 添加 FPS 初始化
+        #self.init_fps()  # 添加 FPS 初始化
         
         # 初始化页面管理器
         self.page_manager = PageManager()
@@ -191,7 +191,7 @@ class Screen():
         return self.config
         
     def init_screen(self):
-        self.wrapper = lvgl_esp32.Wrapper(display, touch,use_spiram=False, buf_lines=24)
+        self.wrapper = lvgl_esp32.Wrapper(display, touch,use_spiram=False, buf_lines=48)
         self.wrapper.init()
 
         display.brightness(60)
@@ -218,6 +218,7 @@ class Screen():
         fs_driver.fs_register(fs_drv, 'S')
 
         self.myfont_en_100 = lv.binfont_create("S:%s/font/speed_num_consola_80.bin" % script_path)
+        self.myfont_en_50 = lv.binfont_create("S:%s/font/speed_num_consola_50.bin" % script_path)
 
     def init_fps(self):
         """初始化 FPS 显示相关内容"""

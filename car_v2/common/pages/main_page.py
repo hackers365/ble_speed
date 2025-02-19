@@ -15,29 +15,41 @@ class MainPage(BasePage):
         super().__init__(baseScreen)
         self.script_path = baseScreen.script_path
         self.myfont_en_100 = baseScreen.myfont_en_100
+        self.myfont_en_50 = baseScreen.myfont_en_50
         self.bo = None
         self.data_manager = None
         self.es = None
-        self.en = None
         self.pidCmd = None
-        self.slave_en = None
+        self.espn = None
         self.tasks = []
         self.bcast = b'\xff\xff\xff\xff\xff\xff'  # 广播地址
         self.config = baseScreen.get_config()  # Get config from base screen
         self.skip_counter = 0  # 添加skip命令计数器
         self.ble_params = None
+        self.obd_via_espnow = self.config.get_obd_espnow() if hasattr(self.config, 'get_obd_espnow') else False
+        self.door_labels = {}  # 存储车门状态标签
+        self.gear_label = None  # 档位标签
+        self.blinker_arcs = {'left': None, 'right': None}  # 转向灯弧形
+        self.blinker_timer = None  # 闪烁定时器
+        self.blinker_state = False  # 闪烁状态
+        self.drive_mode_label = None  # 驾驶模式标签
 
     def init(self):
         """初始化页面"""
         self._running = True  # 添加运行状态标志
         self.run_mode = self.config.get_run_mode()
         print("run_mode:", self.run_mode)
+        
         # 初始化UI组件
         self.genColorWheel()
         self.genSpeedNum()
         self.genTitle()
         self.genUnit()
         self.genImage()
+        self.genDoorLabels()  # 添加车门状态标签
+        self.genGearLabel()   # 添加档位标签
+        self.genBlinkerArcs()  # 添加转向灯弧形
+        
         # 初始化业务组件
         self.init_components()
         self.init_event()
@@ -70,12 +82,10 @@ class MainPage(BasePage):
         self.get_dma_size()
     
     def init_master_components(self):
-        # 初始化 ESP-NOW
-        def esp_now_recv(mac, msg):
-            pass  # 主机模式不需要处理接收
-        self.en = esp_now.EspN(esp_now_recv)
-        self.en.Run()
-        self.en.AddPeer(self.bcast)
+        # 如果启用了OBD ESP-NOW模式，跳过蓝牙初始化
+        if self.obd_via_espnow:
+            self.init_espnow()
+            return
 
         # 初始化蓝牙
         self.bo = AioBleObd()
@@ -100,15 +110,16 @@ class MainPage(BasePage):
                 'addr': ble_config['device_addr']
             }
             print("BLE params:", self.ble_params)
-
     def init_slave_components(self):
         """初始化slave组件"""
+        self.init_espnow()
+    def init_espnow(self):
+        """初始化espnow组件"""
         def esp_now_recv(mac, msg):
             self.data_manager.put_pre_parse_data(msg)
-            self.data_manager.put_broadcast_data(msg)
-        self.slave_en = esp_now.EspN(esp_now_recv)
-        self.slave_en.Run()
-        self.slave_en.AddPeer(self.bcast)
+        self.espn = esp_now.EspN(esp_now_recv)
+        self.espn.Run()
+        self.espn.AddPeer(self.bcast)
     def genImage(self):
         """根据配置生成图片"""
         # 检查配置是否允许显示图片
@@ -157,14 +168,14 @@ class MainPage(BasePage):
         self.elements.append(self.speed_label)
         self.speed_label.set_style_text_font(self.myfont_en_100, 0)
         self.speed_label.set_text("")
-        self.speed_label.align(lv.ALIGN.CENTER, 0, 0)
+        self.speed_label.align(lv.ALIGN.CENTER, 0, 25)
         self.speed_label.set_style_text_color(lv.color_hex(0xffffff), lv.PART.MAIN)
 
     def genTitle(self):
         """生成标题"""
         self.title_label = lv.label(self.screen)
         self.elements.append(self.title_label)
-        self.title_label.align(lv.ALIGN.CENTER, 0, -100)
+        self.title_label.align(lv.ALIGN.CENTER, 0, -120)
         self.title_label.set_text('Speed')
         self.title_label.set_style_text_color(lv.color_hex(0xffffff), lv.PART.MAIN)
 
@@ -172,7 +183,7 @@ class MainPage(BasePage):
         """生成单位显示"""
         self.unit_label = lv.label(self.screen)
         self.elements.append(self.unit_label)
-        self.unit_label.align(lv.ALIGN.CENTER, 0, 50)
+        self.unit_label.align(lv.ALIGN.CENTER, 110, 15)
         self.unit_label.set_text('km/h')
         self.unit_label.set_style_text_color(lv.color_hex(0xffffff), lv.PART.MAIN)
 
@@ -180,107 +191,92 @@ class MainPage(BasePage):
         """设置圆环颜色"""
         self.arc.set_style_arc_color(lv.color_hex(color_code), lv.PART.MAIN)
 
-    async def send_data(self, data, delay=None):
-        """发送数据到OBD设备"""
-        ELM_PROMPT = b'>'
-        ret = self.bo.send(data)
-        if not ret:
-            return False
-        '''
-        if delay:
-            await asyncio.sleep(delay)
-        
-        ret = await self.read_data(ELM_PROMPT)
-        if len(ret) > 0:
-            return ret
-        '''
-        return None
-        
-    async def read_data(self, end_marker=b'>', timeout=1000):
-        print("start read_data")
-        """读取OBD设备返回的数据"""
-        ret = bytearray()
-        start_time = time.ticks_ms()
+    async def send_obd_command(self, command):
+        """
+        统一的OBD命令发送方法
+        根据obd_via_espnow配置决定使用ESP-NOW还是蓝牙发送
+        """
         try:
-            while self._running:
-                current_time = time.ticks_ms()
-                if time.ticks_diff(current_time, start_time) > timeout:
-                    return ret
-
-                if not self.data_manager.raw_data_empty():
-                    data = self.data_manager.get_raw_data()
-                    if data:
-                        ret.extend(data)
-                        if end_marker in ret:
-                            break
-            
-                await asyncio.sleep_ms(5)
+            if self.obd_via_espnow:
+                # ESP-NOW模式
+                return self.espn.Send(self.bcast, command, False)
+            else:
+                # 蓝牙模式
+                if self.bo and self.bo.is_connected:
+                    return await self.bo.send(command)
+                return False
         except Exception as e:
-            print('read_data error:', e)
-        return ret
+            print(f"send_obd_command error: {e}")
+            return False
 
     async def collect_data(self):
         """收集数据的协程"""
         while self._running:
             try:
-                # 连接设备
-                if not self.bo.is_connected:
-                    # 隐藏显示内容
-                    self.speed_label.add_flag(lv.obj.FLAG.HIDDEN)
-                    self.title_label.add_flag(lv.obj.FLAG.HIDDEN)
-                    self.unit_label.add_flag(lv.obj.FLAG.HIDDEN)
-                    
-                    # 检查是否已经显示loading动画
-                    if not hasattr(self, 'loading') or not self.loading:
-                        # 显示 loading 动画
-                        self.loading = self.show_lottie(self.screen, "/rlottie/loading.json", 150, 150, 0, 0)
-                    success = False
-                    if self.ble_params:
-                        success = await self.bo.connect_to_service(
-                            self.ble_params['addr'], 
-                            self.ble_params['service_uuid'], 
-                            self.ble_params['tx_uuid'], 
-                            self.ble_params['rx_uuid']
-                        )
-                    
-                    if success:
-                        # 连接成功才删除loading动画
-                        if hasattr(self, 'loading') and self.loading:
-                            self.loading.delete()
-                            self.loading = None
-                        # 恢复初始显示
-                        self.speed_label.remove_flag(lv.obj.FLAG.HIDDEN)
-                        self.title_label.remove_flag(lv.obj.FLAG.HIDDEN)
-                        self.unit_label.remove_flag(lv.obj.FLAG.HIDDEN)
-                    else:
-                        # 连接失败，保持loading动画显示
-                        await asyncio.sleep_ms(3000)
+                print("obd_via_espnow:", self.obd_via_espnow)
+                # 如果是ESP-NOW模式，跳过蓝牙连接检查
+                if not self.obd_via_espnow:
+                    # 连接设备
+                    if not self.bo.is_connected:
+                        # 隐藏显示内容
+                        self.speed_label.add_flag(lv.obj.FLAG.HIDDEN)
+                        self.title_label.add_flag(lv.obj.FLAG.HIDDEN)
+                        self.unit_label.add_flag(lv.obj.FLAG.HIDDEN)
+                        
+                        # 检查是否已经显示loading动画
+                        if not hasattr(self, 'loading') or not self.loading:
+                            # 显示 loading 动画
+                            self.loading = self.show_lottie(self.screen, "/rlottie/loading.json", 150, 150, 0, 0)
+                        success = False
+                        if self.ble_params:
+                            success = await self.bo.connect_to_service(
+                                self.ble_params['addr'], 
+                                self.ble_params['service_uuid'], 
+                                self.ble_params['tx_uuid'], 
+                                self.ble_params['rx_uuid']
+                            )
+                        
+                        if success:
+                            # 连接成功才删除loading动画
+                            if hasattr(self, 'loading') and self.loading:
+                                self.loading.delete()
+                                self.loading = None
+                            # 恢复初始显示
+                            self.speed_label.remove_flag(lv.obj.FLAG.HIDDEN)
+                            self.title_label.remove_flag(lv.obj.FLAG.HIDDEN)
+                            self.unit_label.remove_flag(lv.obj.FLAG.HIDDEN)
+                        else:
+                            # 连接失败，保持loading动画显示
+                            await asyncio.sleep_ms(3000)
+                            continue
+
+                # 发送主命令
+                if self.obd_via_espnow:
+                    for k in self.pidCmd.espnow_cmd_map:
+                        if not await self.send_obd_command(self.pidCmd.espnow_cmd_map[k]["cmd"]):
+                            await asyncio.sleep_ms(1000) # 等待1000ms
+                            continue
+                        await asyncio.sleep_ms(200) # 等待200ms
+                else:
+                    if not await self.send_obd_command(self.pidCmd.multi_cmd_bytes):
+                        await asyncio.sleep_ms(2000)
                         continue
-                
-                # 发送数据
-                '''
-                for k in self.pidCmd.cmd_map:
-                    if not self._running:
-                        return
-                '''     
-                # 发送命令
-                if not await self.bo.send(self.pidCmd.multi_cmd_bytes):
-                    continue
-                
+            
                 # 使用独立计数器控制skip_multi命令发送
                 self.skip_counter += 1
                 if self.skip_counter >= 10:
                     for k in self.pidCmd.cmd_map:
                         if "skip_multi" in self.pidCmd.cmd_map[k]:
-                            if not await self.bo.send(self.pidCmd.cmd_map[k]["cmd"]):
+                            cmd_bytes = self.pidCmd.cmd_map[k]["cmd"]
+                            if not await self.send_obd_command(cmd_bytes):
                                 continue
                             await asyncio.sleep_ms(500)
                     self.skip_counter = 0  # 重置计数器
 
-                
             except Exception as e:
                 print('collect_data error:', e)
-                await self.bo.disconnect()
+                if not self.obd_via_espnow and self.bo:
+                    await self.bo.disconnect()
 
             await asyncio.sleep_ms(200)
             
@@ -294,7 +290,7 @@ class MainPage(BasePage):
         """esp_now接收数据"""
         while self._running:
             try:
-                self.slave_en.Recv()
+                self.espn.Recv()
             except Exception as e:
                 print('esp_now_recv error:', e)
             await asyncio.sleep_ms(10)
@@ -305,8 +301,8 @@ class MainPage(BasePage):
             #try:
             if not self.data_manager.broadcast_data_empty():
                 data = self.data_manager.get_broadcast_data()
-                if self.en:
-                    self.en.Send(self.bcast, data, False)
+                if self.espn:
+                    self.espn.Send(self.bcast, data, False)
             #except Exception as e:
             #    print('broadcast_data error:', e)
             await asyncio.sleep_ms(10)
@@ -350,6 +346,29 @@ class MainPage(BasePage):
                 v["value"] = v["default"]
             same_cmd_type = self.pidCmd.same_cmd_type()
             if "pid" in v:
+                # 处理车门状态
+                if v["pid"] == 'D0':
+                    self.update_door_status(v["value"])
+                    return
+                    
+                # 处理档位状态
+                if v["pid"] == 'D1':
+                    self.update_gear_status(v["value"])
+                    return
+                    
+                # 处理转向灯状态
+                if v["pid"] == 'D2':
+                    self.update_blinker_status(v["value"])
+                    return
+                    
+                # 处理驾驶模式 (PID: D4)
+                if v["pid"] == 'D4':
+                    if isinstance(v["value"], list) and len(v["value"]) >= 2:
+                        drive_mode = v["value"][1]  # 第二个字节是驾驶模式
+                        self.update_drive_mode(drive_mode)  # 使用update_drive_mode函数处理
+                    return
+                    
+                # 原有的显示逻辑
                 if config_info["pid"] == v["pid"]:
                     if not same_cmd_type and 'title' in config_info:
                         self.setTitleText(config_info["title"])
@@ -383,6 +402,7 @@ class MainPage(BasePage):
                     self.pidCmd.last_cmd_type = self.pidCmd.cmd_type
         except Exception as e:
             print('on_show error:', e)
+
     async def test_data(self):
         resp = {"pid": '0D', 'value': 100}
         while self._running:
@@ -397,7 +417,8 @@ class MainPage(BasePage):
             run_tasks = [
                 self.collect_data,
                 #self.test_data,
-                self.recv_task,  # 添加接收任务
+                self.ble_recv_task,  # 添加接收任务
+                self.esp_now_recv,
                 self.parse_data,
                 self.display_data,
                 self.broadcast_data,
@@ -442,33 +463,55 @@ class MainPage(BasePage):
 
     def destroy(self):
         """页面销毁时清理资源"""
+        # 首先停止所有异步任务
         self._running = False
         
-        asyncio.gather(*self.tasks)
-        print("after gather")
+        # 清理转向灯相关资源
+        if hasattr(self, 'blinker_timer') and self.blinker_timer:
+            self.blinker_timer.delete()
+            self.blinker_timer = None
+        
+        # 等待异步任务完成
+        if self.tasks:
+            asyncio.gather(*self.tasks)
+            print("after gather")
+            self.tasks.clear()
         
         # 清理蓝牙连接
         if self.bo:
-            self.bo.close()  # 使用新的 close 方法
+            self.bo.close()
             self.bo = None
-            
-        # 最后清理对象引用
+        
+        # 清理ESP-NOW
+        if self.espn:
+            self.espn.destroy()
+            self.espn = None
+        
+        # 移除事件回调
+        if hasattr(self, 'arc'):
+            self.deinit_event()
+        
+        # 清理数据管理相关对象
         self.data_manager = None
         self.es = None
         self.pidCmd = None
-
-        #清理espnow
         
-        if self.en:
-            self.en.destroy()
-            self.en = None
-        if self.slave_en:
-            self.slave_en.destroy()
-            self.slave_en = None
-        self.deinit_event()
-
-        # 调用父类的 destroy
-        super().destroy()
+        # 清理转向灯弧形对象引用
+        if hasattr(self, 'blinker_arcs'):
+            self.blinker_arcs.clear()
+        
+        # 清理车门标签对象引用
+        if hasattr(self, 'door_labels'):
+            self.door_labels.clear()
+        
+        # 清理档位标签对象引用
+        self.gear_label = None
+        
+        # 最后调用父类的 destroy 方法清理UI元素
+        try:
+            super().destroy()
+        except Exception as e:
+            print(f"Error in super().destroy(): {e}")
 
     def setTitleText(self, text):
         """设置标题文本"""
@@ -484,7 +527,7 @@ class MainPage(BasePage):
             if hasattr(self, 'unit_label'):
                 self.unit_label.set_text(text)
                 # 根据主值的长度调整单位标签的位置
-                self.unit_label.align(lv.ALIGN.CENTER, x_offset, 0)
+                self.unit_label.align(lv.ALIGN.CENTER, x_offset, 15)
         except Exception as e:
             print('setUnitText error:', e)
 
@@ -509,8 +552,10 @@ class MainPage(BasePage):
         except Exception as e:
             print('on_screen_click error:', e)
 
-    async def recv_task(self):
+    async def ble_recv_task(self):
         """接收数据的协程"""
+        if  self.obd_via_espnow:
+            return
         while self._running:
             try:
                 if not self.bo.is_connected:
@@ -529,6 +574,184 @@ class MainPage(BasePage):
                 await asyncio.sleep_ms(1000)
                 
         print("recv task end")
+
+    def genDoorLabels(self):
+        """生成车门状态标签"""
+        # 加载车门开启图片
+        with open('%s/open_door2.png' % self.script_path, 'rb') as f:
+            door_png_data = f.read()
+        
+        self.door_img_dsc = lv.image_dsc_t({
+            'data_size': len(door_png_data),
+            'data': door_png_data 
+        })
+
+        # 定义四个位置，以屏幕中心为参考点
+        positions = {
+            'fl': {'align': lv.ALIGN.CENTER, 'x': -90, 'y': -90},  # 左前门
+            'fr': {'align': lv.ALIGN.CENTER, 'x': 90, 'y': -90},   # 右前门
+            'rl': {'align': lv.ALIGN.CENTER, 'x': -90, 'y': 90},   # 左后门
+            'rr': {'align': lv.ALIGN.CENTER, 'x': 90, 'y': 90}     # 右后门
+        }
+        
+        # 创建图片对象
+        for door, pos in positions.items():
+            img = lv.image(self.screen)
+            img.set_src(self.door_img_dsc)
+            img.align(pos['align'], pos['x'], pos['y'])
+            img.add_flag(lv.obj.FLAG.HIDDEN)  # 默认隐藏
+            self.door_labels[door] = img
+            self.elements.append(img)
+
+    def genGearLabel(self):
+        """生成档位显示标签"""
+        self.gear_label = lv.label(self.screen)
+        # 使用大字体
+        self.gear_label.set_style_text_font(self.myfont_en_50, 0)
+        self.gear_label.set_style_text_color(lv.color_hex(0xFFFFFF), 0)
+        # 在圆形屏幕底部居中显示，以屏幕中心为参考点
+        self.gear_label.align(lv.ALIGN.CENTER, 0, -70)  # 向下偏移120像素
+        self.gear_label.set_text("")  # 默认空文本
+        self.elements.append(self.gear_label)
+
+    def update_door_status(self, door_status):
+        """更新车门状态显示"""
+        if not isinstance(door_status, dict):
+            return
+            
+        # 更新每个车门的显示状态
+        for door in ['fl', 'fr', 'rl', 'rr']:
+            if door in self.door_labels:
+                if door_status.get(door, False):
+                    self.door_labels[door].remove_flag(lv.obj.FLAG.HIDDEN)
+                else:
+                    self.door_labels[door].add_flag(lv.obj.FLAG.HIDDEN)
+                    
+        # 特殊处理后备箱
+        if door_status.get('trunk', False):
+            # 如果需要，可以添加后备箱开启的显示逻辑
+            pass
+
+    def update_gear_status(self, gear):
+        """更新档位显示"""
+        if not isinstance(gear, str):
+            return
+            
+        if hasattr(self, 'gear_label') and self.gear_label:
+            self.gear_label.set_text(gear)
+
+    def genBlinkerArcs(self):
+        """生成转向灯弧形"""
+        # 左转向灯弧形
+        self.blinker_arcs['left'] = lv.arc(self.screen)
+        left_arc = self.blinker_arcs['left']
+        left_arc.set_size(320, 320)
+        left_arc.center()
+        left_arc.set_bg_angles(165, 195)  # 左侧弧形
+        left_arc.set_angles(165, 195)
+
+        # 设置基本样式
+        left_arc.set_style_bg_opa(lv.OPA.TRANSP, lv.PART.MAIN)
+        left_arc.set_style_arc_width(6, lv.PART.MAIN)
+        left_arc.remove_style(None, lv.PART.KNOB)
+        left_arc.set_style_arc_color(lv.color_hex(0x00FF00), lv.PART.MAIN)
+        left_arc.remove_style(None, lv.PART.INDICATOR)
+        
+        # 完全禁用交互
+        left_arc.add_flag(lv.obj.FLAG.HIDDEN)  # 默认隐藏
+        left_arc.add_flag(lv.obj.FLAG.IGNORE_LAYOUT)  # 忽略布局
+        left_arc.add_flag(lv.obj.FLAG.FLOATING)  # 浮动模式
+        left_arc.remove_flag(lv.obj.FLAG.CLICKABLE)  # 禁用点击
+        left_arc.remove_flag(lv.obj.FLAG.SCROLLABLE)  # 禁用滚动
+        left_arc.remove_flag(lv.obj.FLAG.CLICK_FOCUSABLE)  # 禁用焦点
+        left_arc.add_flag(lv.obj.FLAG.EVENT_BUBBLE)  # 允许事件冒泡到父对象
+        
+        # 右转向灯弧形
+        self.blinker_arcs['right'] = lv.arc(self.screen)
+        right_arc = self.blinker_arcs['right']
+        right_arc.set_size(320, 320)
+        right_arc.center()
+        right_arc.set_bg_angles(345, 15)  # 右侧弧形
+        right_arc.set_angles(345, 15)
+
+        # 设置基本样式
+        right_arc.set_style_bg_opa(lv.OPA.TRANSP, lv.PART.MAIN)
+        right_arc.set_style_arc_width(6, lv.PART.MAIN)
+        right_arc.remove_style(None, lv.PART.KNOB)
+        right_arc.set_style_arc_color(lv.color_hex(0x00FF00), lv.PART.MAIN)
+        right_arc.remove_style(None, lv.PART.INDICATOR)
+        
+        # 完全禁用交互
+        right_arc.add_flag(lv.obj.FLAG.HIDDEN)  # 默认隐藏
+        right_arc.add_flag(lv.obj.FLAG.IGNORE_LAYOUT)  # 忽略布局
+        right_arc.add_flag(lv.obj.FLAG.FLOATING)  # 浮动模式
+        right_arc.remove_flag(lv.obj.FLAG.CLICKABLE)  # 禁用点击
+        right_arc.remove_flag(lv.obj.FLAG.SCROLLABLE)  # 禁用滚动
+        right_arc.remove_flag(lv.obj.FLAG.CLICK_FOCUSABLE)  # 禁用焦点
+        right_arc.add_flag(lv.obj.FLAG.EVENT_BUBBLE)  # 允许事件冒泡到父对象
+
+        self.elements.extend([left_arc, right_arc])
+
+    def blinker_timer_cb(self, timer):
+        """转向灯闪烁定时器回调"""
+        if not self.blinker_timer:
+            return
+        
+        self.blinker_state = not self.blinker_state
+        
+        # 根据当前闪烁状态和转向灯状态来控制显示/隐藏
+        if self.blinker_state:
+            # 显示阶段：根据实际转向灯状态显示
+            if hasattr(self, '_left_blinker') and self._left_blinker:
+                self.blinker_arcs['left'].remove_flag(lv.obj.FLAG.HIDDEN)
+            if hasattr(self, '_right_blinker') and self._right_blinker:
+                self.blinker_arcs['right'].remove_flag(lv.obj.FLAG.HIDDEN)
+        else:
+            # 隐藏阶段：隐藏所有转向灯
+            self.blinker_arcs['left'].add_flag(lv.obj.FLAG.HIDDEN)
+            self.blinker_arcs['right'].add_flag(lv.obj.FLAG.HIDDEN)
+
+    def update_blinker_status(self, scm_status):
+        """更新转向灯状态"""
+        if not isinstance(scm_status, dict):
+            return
+            
+        # 保存转向灯状态
+        self._left_blinker = scm_status.get('left_blinker', False)
+        self._right_blinker = scm_status.get('right_blinker', False)
+        
+        # 管理定时器
+        need_timer = self._left_blinker or self._right_blinker
+        has_timer = self.blinker_timer is not None
+        
+        if need_timer and not has_timer:
+            # 需要定时器但没有时，创建定时器
+            self.blinker_timer = lv.timer_create(self.blinker_timer_cb, 300, None)
+            self.blinker_state = True
+        elif not need_timer and has_timer:
+            # 不需要定时器但有时，删除定时器
+            self.blinker_timer.delete()
+            self.blinker_timer = None
+            # 确保两个转向灯都隐藏
+            self.blinker_arcs['left'].add_flag(lv.obj.FLAG.HIDDEN)
+            self.blinker_arcs['right'].add_flag(lv.obj.FLAG.HIDDEN)
+
+    def update_drive_mode(self, mode):
+        """更新驾驶模式显示"""
+        # 驾驶模式映射
+        mode_map = {
+            0: "NORMAL",
+            1: "SPORT",
+            2: "ECO",
+            3: "SNOW"
+        }
+        
+        # 更新圆环颜色
+        if hasattr(self, 'arc'):
+            if mode == 1:  # SPORT模式
+                self.setColorWheelColor(0x0000ff)  # 红色 (BGR: 0x0000ff)
+            elif mode == 0:  # NORMAL模式
+                self.setColorWheelColor(0x00a5ff)  # 橙色 (BGR: 0x00a5ff)
 
 class DataManager:
     """数据管理器类"""

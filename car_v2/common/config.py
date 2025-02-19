@@ -2,6 +2,7 @@ try:
     import os
 except ImportError:
     import uos as os
+import json
 
 class Config:
     def __init__(self, config_file='config.ini'):
@@ -103,4 +104,14 @@ class Config:
     def set_show_image(self, show_image):
         """设置是否显示图片"""
         self.set('display', 'show_image', str(show_image))
-        self.save() 
+        self.save()
+
+    def get_obd_espnow(self):
+        """获取OBD ESP-NOW配置"""
+        value = self.get('obd', 'espnow', 'false')
+        return value.lower() == 'true'
+
+    def set_obd_espnow(self, value):
+        """设置OBD ESP-NOW配置"""
+        self.set('obd', 'espnow', str(value))
+        self.save()
