@@ -197,6 +197,7 @@ class MainPage(BasePage):
         根据obd_via_espnow配置决定使用ESP-NOW还是蓝牙发送
         """
         try:
+            print("send_obd_command:", command)
             if self.obd_via_espnow:
                 # ESP-NOW模式
                 return self.espn.Send(self.bcast, command, False)
@@ -288,7 +289,7 @@ class MainPage(BasePage):
         print("collect data end")
     async def esp_now_recv(self):
         """esp_now接收数据"""
-        while self._running:
+        while self._running and self.espn:
             try:
                 self.espn.Recv()
             except Exception as e:
@@ -345,6 +346,7 @@ class MainPage(BasePage):
                 v = config_info
                 v["value"] = v["default"]
             same_cmd_type = self.pidCmd.same_cmd_type()
+            print(v)
             if "pid" in v:
                 # 处理车门状态
                 if v["pid"] == 'D0':
